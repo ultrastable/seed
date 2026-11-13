@@ -1,0 +1,16 @@
+{
+ "since": "2026-10-30",
+ "days": {
+  "2026-11-12": {
+   "deploy_ok": 116,
+   "deploy_fail": 5,
+   "human_triggered": 5
+  },
+  "2026-11-13": {
+   "deploy_ok": 3,
+   "deploy_fail": 1,
+   "human_triggered": 0
+  }
+ },
+ "total_verified_deploys": 119
+}
