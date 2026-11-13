@@ -1,0 +1,27 @@
+{
+ "k": 2.99,
+ "deploys": 119,
+ "human_triggered": 5,
+ "checks": {
+  "ship": true,
+  "cheaper": false,
+  "start": true
+ },
+ "next": [
+  {
+   "id": "COST-CHECKS-1",
+   "loop": "cost",
+   "do": "Cut checks.yml billed minutes: foundation tests are 70s of a ~2 min run; keep each run under 60s",
+   "repo": "ultrastable/ultrastable",
+   "path": ".github/workflows/checks.yml"
+  },
+  {
+   "id": "MANTRA-WIRE-1",
+   "loop": "self",
+   "do": "Run scripts/criticality.py + scripts/mantra.py on a daily cron (needs an org-read token secret) and file an issue when it exits nonzero",
+   "repo": "ultrastable/seed",
+   "path": "scripts/mantra.py"
+  }
+ ],
+ "critical": false
+}
