@@ -23,3 +23,18 @@ out["total_verified_deploys"] = sum(v["deploy_ok"] for v in per_day.values())
 s = json.dumps(out, indent=1)
 print(s)
 open("metrics/criticality.json", "w").write(s)
+
+# --- spend (GitHub billing, current month) ---
+FREE_MINUTES = 2000  # GitHub Free org, private-repo Linux minutes/month
+items = json.loads(subprocess.check_output(["gh", "api", "orgs/ultrastable/settings/billing/usage"], text=True))["usageItems"]
+now = dt.datetime.now(dt.timezone.utc)
+month = [i for i in items if i["date"][:7] == now.strftime("%Y-%m")]
+mins = sum(i["quantity"] for i in month if i["unitType"] == "Minutes")
+proj = mins / now.day * 30
+out["spend"] = {"month_minutes": mins, "free_minutes": FREE_MINUTES,
+                "projected_month_minutes": round(proj),
+                "gross_usd": round(sum(i["grossAmount"] for i in month), 2),
+                "net_usd": round(sum(i["netAmount"] for i in month), 2),
+                "over_budget_projected": proj > FREE_MINUTES}
+s = json.dumps(out, indent=1); print(json.dumps(out["spend"], indent=1))
+open("metrics/criticality.json", "w").write(s)
