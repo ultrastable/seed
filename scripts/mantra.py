@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LicenseRef-Ultrastable-USL-1.0
+# Copyright (c) 2026 Rowan Brad Quni-Gudzinas. Non-commercial use free; commercial use requires a license. See LICENSE.
 """The mantra, as code. Every loop ends by calling this; it is the system talking to itself.
 
     SHIP ONE VERIFIED THING. MAKE THE NEXT ONE CHEAPER. START IT.

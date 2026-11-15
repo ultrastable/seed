@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LicenseRef-Ultrastable-USL-1.0
+# Copyright (c) 2026 Rowan Brad Quni-Gudzinas. Non-commercial use free; commercial use requires a license. See LICENSE.
 """Criticality scoreboard: verified deploys vs failures per day across the ultrastable org.
 Usage: python scripts/criticality.py [days]  (needs gh CLI with org read access)"""
 import json, subprocess, sys, datetime as dt, collections
