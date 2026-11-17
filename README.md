@@ -1,5 +1,7 @@
 # seed
 
+> **License: free for non-commercial use. Commercial use requires a license and shares revenue with the Licensor.** See [LICENSE](LICENSE) (Ultrastable License v1.0, source-available, not open source) and [COMMERCIAL-TERMS.md](COMMERCIAL-TERMS.md). No patent is filed; the license is the protection.
+
 Bootstrap repo for Ultrastable: an idea goes in, a running, self-improving organization comes out.
 
 ## North star: criticality
