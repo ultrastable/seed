@@ -21,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0  # the item dates come from git history; a shallow clone is reported unmeasured
       - name: Measure inflow against closures and SLA; consolidate and throttle when tipped
-        run: python3 scripts/balance.py --run --apply
+        run: python3 scripts/balance.py --gate --apply && python3 scripts/balance.py --run --apply
       - name: Land the result
         run: |
           git config user.name ultrastable-balance; git config user.email balance@users.noreply.github.com
