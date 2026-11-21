@@ -5,6 +5,7 @@
 // recorded in the tick's errors and as a backlog item; the remaining steps still run.
 
 import { ensureLedger } from './budget.js';
+import { readSpend } from './spend.js';  // SPEND-SOFT-1
 import { over_budget } from './costsample.js';
 import { freeTierLevel } from './freetier.js';  // FREE-TIER-1: the daily account-wide free-plan level gates the tick  // Q-LESSON-COST-SAMPLE-ACT: a D1 rows-read breach holds the tick lean  // ORIGINATE-CAP-1: the daily cap is counted in the budget ledger
 import { criticalityStep } from './criticality.js';
@@ -465,8 +466,8 @@ export const STEP_ORDER = ['migrate', 'reconcile', 'reap_claims', 'connector_hea
 // other step either reads wide (probe_gates, score_predictions, accrue_trust, selfaudit, pulse, ignition, check_plus_share) or starts new work
 // that reads more (reap_claims feeds dispatch, dispatch, execute), so it waits for the hour to pass. A skipped step counts as completed: it is
 // a decision, not a failure, so the health probe and the ignition streak stay green.
-export const FREE_TIER_WIDE_STEPS = ['probe_gates', 'score_predictions', 'accrue_trust', 'selfaudit', 'pulse', 'ignition', 'check_plus_share', 'goals', 'age_sla', 'cost_probe'];  // FREE-TIER-1
-export const COST_ESSENTIAL_STEPS = ['migrate', 'reconcile', 'measure', 'criticality'];
+import { FREE_TIER_WIDE_STEPS, COST_ESSENTIAL_STEPS, SPEND_KEEP_STEPS, LEAN_EVERY_H, stepPlan } from './stepplan.js';  // SPEND-SOFT-1, kept pure so it is testable alone
+export { FREE_TIER_WIDE_STEPS, COST_ESSENTIAL_STEPS, SPEND_KEEP_STEPS, LEAN_EVERY_H, stepPlan };
 
 export async function runTick(db, { config, env = {}, now = Date.now(), wake = null, ai = null, budget = null } = {}) {
   const startedIso = iso(new Date(now));
@@ -476,6 +477,8 @@ export async function runTick(db, { config, env = {}, now = Date.now(), wake = n
   let completed = 0;
   try { ctx.costBreach = await over_budget(db, config && config.cost_budgets, now); } catch (e) { ctx.costBreach = null; ctx.notes.push(`cost check failed: ${String(e && e.message).slice(0, 120)}`); }
   try { ctx.freeTier = await freeTierLevel(db, now); } catch (e) { ctx.freeTier = null; ctx.notes.push(`free-tier check failed: ${String(e && e.message).slice(0, 120)}`); }
+  try { ctx.spend = await readSpend(db, now); } catch (e) { ctx.spend = null; ctx.notes.push(`spend check failed: ${String(e && e.message).slice(0, 120)}`); }
+  if (ctx.spend && ctx.spend.measured && ctx.spend.level !== 'full') ctx.notes.push(`spend ${ctx.spend.level}: about ${ctx.spend.usd_today} USD today, ${ctx.spend.projected_usd_day} projected of a ${ctx.spend.target_usd_day} USD soft target; ${ctx.spend.text}`);
   const lean = Boolean((ctx.costBreach && ctx.costBreach.over) || (ctx.freeTier && ctx.freeTier.level === 'shed'));
   const degrade = !lean && Boolean(ctx.freeTier && ctx.freeTier.level === 'degrade');  // degrade: only the wide readers wait; dispatch and execute keep the queue moving
   if (ctx.freeTier && ctx.freeTier.level !== 'ok') ctx.notes.push(`free tier ${ctx.freeTier.level}: ${Object.entries(ctx.freeTier.resources).filter(([, r]) => r.level === 'degrade' || r.level === 'shed').map(([k, r]) => `${k} ${Math.round(r.frac * 100)}% used, ${Math.round(r.projected_frac * 100)}% projected`).join(', ')}; skipped non-essential steps`);
@@ -492,7 +495,7 @@ export async function runTick(db, { config, env = {}, now = Date.now(), wake = n
       } catch (e) { ctx.errors.push(`goals seed: ${String(e && e.message).slice(0, 120)}`); }
       if (new Date(now).getUTCMinutes() < 10) { try { await STEPS[name](db, ctx); } catch (e) { ctx.errors.push(`goals: ${String(e && e.message).slice(0, 160)}`); } completed++; continue; }  // one tick in six, lean or degraded: the control step at a sixth of the reads, so a cost breach cannot freeze the knobs that answer it
     }
-    if ((lean && !COST_ESSENTIAL_STEPS.includes(name)) || (degrade && FREE_TIER_WIDE_STEPS.includes(name))) { completed++; continue; }
+    if (stepPlan(name, { lean, degrade, spend: ctx.spend, now }) === 'defer') { completed++; continue; }
     try {
       await STEPS[name](db, ctx);
       completed++;
