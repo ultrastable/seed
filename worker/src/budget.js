@@ -161,3 +161,9 @@ export async function budgetView(db, { config = {}, env = {}, now = Date.now() }
   return { knob: { usd_per_month: b.usd_per_month, set_by: env.BUDGET_USD_PER_MONTH !== undefined && String(env.BUDGET_USD_PER_MONTH).trim() !== '' ? 'BUDGET_USD_PER_MONTH' : 'instance manifest', plan: b.plan },
     allowance: a, usage: u, mode: d.mode, why: d.why, prices: PRICES, as_of: new Date(now).toISOString() };
 }
+
+// PLAN-1 (ported with SPEND-SOFT-1): which Cloudflare plan the account is on; the free-tier governor reads the matching allowances.
+export function planOf(config = {}, env = {}) {
+  if (env && (env.CF_PLAN === 'paid' || env.CF_PLAN === 'free')) return env.CF_PLAN;
+  return config && config.budget && config.budget.plan === 'paid' ? 'paid' : 'free';
+}
