@@ -6,7 +6,7 @@
 // (cached by livechanges.js), judges the cadence with workers/core/progress (bookkeeping merges never count), writes the judgement to
 // progress_cadence, and repairs a slow or stalled system: it dispatches the workflows that produce that system's work (at most once per
 // cooldown) and, when stalled, files STALL-<system>, which only the same reading can close. Nothing is ever reported as shipped that did not merge.
-import { cadence, normalize } from '../../../workers/core/progress/index.js';
+import { cadence, normalize } from './vendor/core/progress.js';
 
 const run = (db, sql, ...a) => db.prepare(sql).bind(...a).run();
 const all = async (db, sql, ...a) => (await db.prepare(sql).bind(...a).all()).results || [];
