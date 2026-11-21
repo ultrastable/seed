@@ -1,0 +1,13 @@
+// Rendered to wrangler.jsonc by bootstrap/bootstrap.py. Edit the template, not the output.
+{
+  "name": "{worker_name}",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-12",
+  "triggers": { "crons": ["{tick_cron}"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "{d1_database}", "database_id": "{d1_database_id}", "migrations_dir": "migrations" }
+  ],
+  "workers_dev": {workers_dev},
+  "vars": { "PUBLIC_HEALTH_ONLY": "{public_health_only}" },
+  "observability": { "enabled": true }
+}

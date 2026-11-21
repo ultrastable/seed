@@ -1,0 +1,33 @@
+name: kit-sync
+# budget: ~1 min per day (one shallow clone of the public main repository, one commit when the kit changed)
+# trigger: daily and dispatch; the kit changes only when main merges a seed/ change, so daily is enough (never faster)
+# free-alternative: the tick Worker's main writer can push the same tree; this job needs no credential a person mints
+# TEMPLATE-CODE-ONLY-1: this repository is the code-only template; its tree is the seed/ folder of ultrastable/ultrastable.
+on:
+  schedule: [{ cron: "41 5 * * *" }]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: kit-sync, cancel-in-progress: false }
+jobs:
+  sync:
+    if: github.repository == 'ultrastable/seed' && vars.HALT != '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy seed/ from the public main repository
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/ultrastable/ultrastable.git /tmp/main
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name NOTICE ! -name COMMERCIAL-TERMS.md ! -name SECURITY.md ! -name CITATION.cff -exec rm -rf {} +
+          find .github -mindepth 1 ! -path .github/workflows ! -path .github/workflows/kit-sync.yml -delete
+          (cd /tmp/main/seed && tar --exclude=__pycache__ -cf - .) | tar -xf -
+          src=$(git -C /tmp/main rev-parse HEAD)
+          git add -A
+          if git diff --cached --quiet; then echo "kit unchanged at ultrastable/ultrastable@$src"; exit 0; fi
+          git config user.name "ultrastable-kit-sync"
+          git config user.email "kit-sync@users.noreply.github.com"
+          git commit -m "kit-sync: seed/ from ultrastable/ultrastable@$src (TEMPLATE-CODE-ONLY-1)"
+          git push

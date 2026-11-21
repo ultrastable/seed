@@ -1,0 +1,34 @@
+name: funding-maintenance
+# budget: ~5 min x 4/month
+# trigger: weekly registry re-check (needs open network)
+# free-alternative: Cloudflare cron worker with fetch
+# Weekly re-verification of funding/registry.json. See funding/README.md.
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: read
+  issues: write
+concurrency:
+  group: funding-maintenance
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: ${{ !github.event.repository.is_template && github.repository != 'ultrastable/seed' }}  # TEMPLATE-CODE-ONLY-1: the template itself never runs a system's loops
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Budget kill switch
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: python3 scripts/actions_guard.py funding-maintenance
+      - name: Verify registry
+        run: python3 funding/verify.py --fetch --out report.json
+      - name: File or update issues
+        env:
+          GH_TOKEN: ${{ secrets.LANE_PAT || secrets.GITHUB_TOKEN }}
+        run: python3 funding/file_issues.py report.json
