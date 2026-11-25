@@ -2,6 +2,7 @@
 // Cron fires runTick; GET /health shows the last tick's four-line report.
 // Standard issue: first-party web analytics (analytics/analytics.js): /a.js beacon, /a/e collector, GET /api/analytics (bearer ANALYTICS_TOKEN).
 import { paced } from './pace.js';
+import { handleKg } from './knowledge.js';  // KGRAPH-1
 import { withKnobs, readGoals, registerTenant, reportReadings, knobValues } from './goals.js';  // GOALS-1
 import { tune } from './roi.js';  // BOUNDARIES-1
 import { runTick, lastTickForHealth, METRICS, ensureItem } from './tick.js';
@@ -219,6 +220,7 @@ export default {
     if (url.pathname === '/api/live/changes') { try { const rs = config.github_repos || (env.GITHUB_REPOS ? String(env.GITHUB_REPOS).split(',') : []); return Response.json(await readLiveChanges(env.DB, rs.find(r => r.endsWith('/ultrastable')) || rs[0] || null), { headers: { 'cache-control': 'public, max-age=60' } }); } catch (e) { return d1Unavailable(e); } }  // LIVE-FRESH-1
     if (url.pathname === '/api/roi') { try { return Response.json(await readRoi(env.DB, { env }), { headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // ROI-1
     if (url.pathname === '/api/decisions') { try { return Response.json(await readDecisions(env.DB), { headers: { 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // DECISIONS-1
+    if (url.pathname.startsWith('/api/graph')) { try { const r = await handleKg(request, env.DB, { tenant: config.org_slug || '' }); if (r) return r; } catch (e) { return d1Unavailable(e); } }  // KGRAPH-1: the system's knowledge graph, insights, live method and health
     if (url.pathname === '/api/goals' && request.method === 'GET') {  // GOALS-READS-1: readGoals scans 14 days of samples and the loop beats (tens of thousands of D1 rows read), so the answer is cached at the edge for 10 minutes and a failed refresh serves the last good copy
       const cache = typeof caches !== 'undefined' ? caches.default : null, key = new Request(url.origin + '/api/goals', { method: 'GET' });
       try { const hit = cache && await cache.match(key); if (hit) return hit; } catch (e) { /* allow-silent: a cache read miss falls through to the D1 read below */ console.error('goals cache read failed', String(e)); }
