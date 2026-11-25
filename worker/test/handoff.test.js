@@ -212,6 +212,11 @@ test('topologyBindings keeps a Durable Object namespace so a handoff upload neve
   assert.deepEqual(topologyBindings(topo, 'ultrastable-tenants').bindings, [{ type: 'durable_object_namespace', name: 'TENANT', class_name: 'TenantDO' }, { type: 'plain_text', name: 'A', text: '1' }]);
 });
 
+test('topologyBindings binds a live R2 bucket and skips one not yet live', () => {
+  const topo = { workers: [{ id: 'ultrastable-tick', state: 'live', bindings: { r2: { AUDIT: 'ultrastable-audit', LATER: 'not-made' } } }], stores: { r2: [{ name: 'ultrastable-audit', state: 'live' }, { name: 'not-made', state: 'planned' }] } };
+  assert.deepEqual(topologyBindings(topo, 'ultrastable-tick').bindings, [{ type: 'r2_bucket', name: 'AUDIT', bucket_name: 'ultrastable-audit' }]);
+});
+
 test('HANDOFF-SUBREQ-1: a deploy reads each import level in one request, not one request per file', async () => {
   const { batchedReader, rawMany } = await import('../src/handoff.js');
   const files = { 'w/a.js': "import './b.js';\nimport './c.js';\n", 'w/b.js': "import './d.js';\n", 'w/c.js': "export const c = 1;\n", 'w/d.js': "export const d = 1;\n" };
@@ -255,4 +260,23 @@ test('HANDOFF-SUBREQ-3: a deploy stopped by the own subrequest meter of the work
   await db.prepare("UPDATE handoffs SET state = 'blocked', attempts = 3, detail = ?").bind('deploy failed 3 times: ultrastable-tick: ' + lim + '; ultrastable-site: ' + lim).run();
   const r = await runHandoffs({ db, token: 't', repos: ['o/r'], fetch: gh(st).f, deployer: async () => ({ ok: true }), probe: async () => ({ ok: true, detail: 'live' }) });
   assert.deepEqual(r.retried, ['o/r#7']); assert.deepEqual(r.verified, ['o/r#7']);
+});
+
+test('a tenant worker is built from its own repository at the commit its main points to (TENANT-REPO-1)', async () => {
+  const topo = { compatibility_date: '2026-11-12', stores: { d1: [{ name: 'ultrastable-unlearn', id: 'U', state: 'live' }], kv: [] },
+    workers: [{ id: 'ultrastable-unlearn', state: 'live', main: 'worker/index.js', source: { repo: 'ultrastable/unlearn', ref: 'main' }, routes: ['unlearn.ultrastable.org'], bindings: { d1: { DB: 'ultrastable-unlearn' } } }] };
+  const tenant = { 'worker/index.js': 'import m from "../vendor/ultrastable/models.json" with { type: "json" };\nexport default { m }', 'vendor/ultrastable/models.json': '{"a":1}' };
+  const SHA = 'a'.repeat(40), seen = [];
+  const f = async (url) => {
+    if (url.includes('/repos/ultrastable/unlearn/commits/main')) return { ok: true, status: 200, text: async () => SHA };
+    const [repoPart, rest] = url.split('/repos/')[1].split('/contents/'); const p = decodeURIComponent(rest.split('?')[0]), ref = rest.split('ref=')[1];
+    seen.push(repoPart + '@' + ref + ':' + p);
+    const body = repoPart === 'o/r' && p === 'doctrine/topology.json' ? JSON.stringify(topo) : repoPart === 'ultrastable/unlearn' && ref === SHA ? tenant[p] : undefined;
+    return { ok: body != null, status: body != null ? 200 : 404, text: async () => body };
+  };
+  let posted = null; const site = { fetch: async (u, o) => { posted = JSON.parse(o.body); return { ok: true, json: async () => ({ ok: true, version: 'v9' }) }; } };
+  const r = await makeDeployer({ token: 't', fetch: f, site, key: 'K' })('ultrastable-unlearn', 'core123', 'o/r');
+  assert.equal(r.ok, true, r.detail); assert.equal(r.source_repo, 'ultrastable/unlearn'); assert.equal(r.source_sha, SHA);
+  assert.ok(seen.includes('ultrastable/unlearn@' + SHA + ':worker/index.js'), 'modules come from the tenant repository');
+  assert.deepEqual(posted.domains, ['unlearn.ultrastable.org']); assert.equal(posted.modules.length, 2);
 });

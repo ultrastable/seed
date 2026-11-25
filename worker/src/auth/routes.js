@@ -31,7 +31,12 @@ export async function reuseApp(env, tenant, provider, title, now) {
   const row = await store.get(env.DB, tenant, provider);
   if (!row) return null;
   const meta = JSON.parse(row.meta || '{}');
-  if (!meta.app_id || !meta.slug || row.status === 'failed') return null;
+  if (!meta.app_id || !meta.slug) return null;
+  if (row.status === 'failed' && !meta.installation_id) return null;  // an app that was never installed has nothing to protect; an installed one is never replaced (NO-NEW-APP-1)
+  if (meta.installation_id && row.status === 'failed') {  // NO-NEW-APP-1: a failing installed app is repaired by re-minting, never by registering another app
+    await store.event(env.DB, tenant, provider, 'reused', 'installed app ' + meta.slug + ' is failing; kept, the tick re-mints; no new app');
+    return doneScreen(title, 'Connected. The system is re-checking the connection by itself; nothing more is needed.');
+  }
   if (meta.installation_id) {  // installed: the admin app rests at 'pending' between uses, which is still connected
     await store.event(env.DB, tenant, provider, 'reused', 'already connected as ' + meta.slug + '; no new app');
     return doneScreen(title, 'Already connected. Nothing more is needed.');
@@ -56,6 +61,12 @@ async function route(request, env, opts = {}) {
   const { tenant = 'default', name = 'ultrastable', fetch: f = fetch, now = Date.now() } = opts;
   const url = new URL(request.url), origin = url.origin;
   if (/^\/(connect|auth|\.well-known\/oauth-client)\//.test(url.pathname) || url.pathname === '/connect') await store.ensureSchema(env.DB);  // the Worker brings up its own credential tables before any route touches them
+  // OWNER-LINKS-4: a provider connect page is the owner's alone. The site Worker presents the shared internal key once its sign-in gate passed; a request without it (a direct hit that skipped the gate) is sent to sign in.
+  if (env.INTERNAL_DEPLOY_KEY && /^\/connect\/(?!github(-admin)?$)[a-z0-9-]+(\/(start|disconnect))?$/.test(url.pathname) && !/\/callback$/.test(url.pathname)) {
+    const key = request.headers.get('x-internal-key') || '', want = String(env.INTERNAL_DEPLOY_KEY);
+    let diff = key.length ^ want.length; for (let i = 0; i < Math.min(key.length, want.length); i++) diff |= key.charCodeAt(i) ^ want.charCodeAt(i);
+    if (diff !== 0) return Response.redirect(new URL('/auth/signin?next=' + encodeURIComponent(url.pathname + url.search), url.origin), 302);
+  }
   if (url.pathname === '/connect') { const r = await probe(env.DB, now); if (!r.github_connected) return Response.redirect(new URL('/connect/github', url), 302); }  // REACH-1: once GitHub is linked /connect is the index of every channel (social.js)
   if (url.pathname === '/auth/health') { const r = await probe(env.DB, now); return Response.json(r, { status: r.ok ? 200 : 503 }); }
   if (url.pathname === '/connect/repos') {  // REPO-ACCESS-1: the one click that widens the installation; GitHub sends the owner back to /auth/github/installed, which re-probes

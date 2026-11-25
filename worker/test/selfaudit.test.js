@@ -6,7 +6,8 @@ import { runTick, ensureItem } from '../src/tick.js';
 import { selfAuditStep, loopBreak, ingestDeploys, probeMode } from '../src/selfaudit.js';
 
 const read = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
-const policy = read('../../autonomy/policy.json'), crit = read('../../autonomy/criticality.json'), reg0 = read('../../autonomy/failure-modes.json'), reg = { ...reg0, modes: [...reg0.modes, ...read('../../../instances/ultrastable/failure-modes.json').modes] };
+const platformModes = () => { try { return read('../../../instances/ultrastable/failure-modes.json').modes; } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };  // SEED-ADMIT-1: a generated system has no platform instance directory; its probe must pass on the seed's own register
+const policy = read('../../autonomy/policy.json'), crit = read('../../autonomy/criticality.json'), reg0 = read('../../autonomy/failure-modes.json'), reg = { ...reg0, modes: [...reg0.modes, ...platformModes()] };
 const config = { org_slug: 't', claim_ttl_minutes: 120, max_wip_per_role: 3, plus_share: 0.2, policy, criticality: crit, failure_modes: reg };
 const ctx = () => ({ nowIso: '2026-11-13 21:00:00', notes: [] });
 
@@ -78,7 +79,7 @@ test('the tick runs the selfaudit step and files FM items for red probes', async
 test('COSTGUARD-1: a red budget probe files the next fix, an over-budget sample stays red, a green sample closes fix and mode', async () => {
   const { sampleCosts } = await import('../src/costsample.js');
   const db = makeDb();
-  const m = JSON.parse(JSON.stringify(read('../../../instances/ultrastable/failure-modes.json').modes[0]).split('qn' + 'fo-audit').join('ext-db'));
+  const m = {"id": "ext-db-d1-budget", "failure": "An external D1 reads more than 15M rows per hour (or the sampler cannot measure it).", "root_cause": "Full-table scans.", "spof": false, "owner_role": "operations", "trigger": "every tick (hourly sample)", "probe": "SELECT CASE WHEN (SELECT rows_read_1h FROM cost_samples WHERE target='ext-db' AND rows_read_1h IS NOT NULL AND at >= datetime('now','-3 hours') ORDER BY id DESC LIMIT 1) < 15000000 THEN 1 ELSE 0 END", "remedy": "index or LIMIT the heaviest scans.", "fixes": [{"id": "ext-db-fix-top-scan", "title": "Find the heaviest queries and add indexes or LIMITs to them."}, {"id": "ext-db-fix-debounce", "title": "Widen the debounce on the readers."}, {"id": "ext-db-fix-sampler", "title": "Bind CF_ANALYTICS_TOKEN to the tick Worker and set database_id, so the sampler can measure."}]};
   const one = { modes: [m] };
   // no token: the sampler records an error sample, the probe is red, the first fix is filed
   await sampleCosts(db, { token: '', budgets: [{ id: 'ext-db', account_id: 'a', database_id: 'd' }] });
