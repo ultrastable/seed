@@ -49,6 +49,15 @@ export async function getToken(db, env, tenant, provider, opts = {}) {
   const now = opts.now || Date.now();
   const memo = memoOf(db), key = tenant + '|' + provider, hit = memo.get(key);
   if (hit && hit.expiresAt - now > MARGIN_MS) return { ok: true, token: hit.token, cached: true, memo: true };
+  // HOSTED-1: a hosted app holds no App key. Its host mints a one-hour token for the app's one repository (apprepos.js on the host); the app
+  // proves itself with the key its host bound at deploy. A refusal is returned as it is, never hidden behind an older token.
+  if (provider === 'github-app' && env.HOST_TOKEN_URL && env.HOST_APP_KEY && env.HOST_REPO) {
+    const r = await (opts.fetch || fetch)(env.HOST_TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': 'ultrastable-hosted-app' }, body: JSON.stringify({ repo: env.HOST_REPO, key: env.HOST_APP_KEY }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.token) return { ok: false, error: 'host token HTTP ' + r.status + (j.error ? ' ' + j.error : '') };
+    memo.set(key, { token: j.token, expiresAt: Date.parse(j.expires_at) });
+    return { ok: true, token: j.token, cached: false, host: true };
+  }
   let m;
   try { m = await store.material(db, env, tenant, provider); }
   catch (e) {
@@ -77,7 +86,9 @@ export const isDead = r => r.status === 'failed' && /refresh HTTP 40[01]|consent
 export async function ownerActs(db) {
   await store.ensureSchema(db);
   const rows = (await db.prepare('SELECT tenant, provider, status, last_error, updated_at FROM credentials').all()).results || [];
-  return rows.filter(isDead).map(r => ({ id: 'signin:' + r.provider, tenant: r.tenant, provider: r.provider, reason: r.last_error, since: r.updated_at, connect: '/connect/' + r.provider.replace(/^oauth:/, '').replace(/^github-.*/, 'github') }));
+  const link = p => p === 'oauth:mastodon' ? '/connect/mastodon/start?instance=mstdn.science' : '/connect/' + p.replace(/^oauth:/, '').replace(/^github-.*/, 'github');  // SOCIAL-MODULE-1: one link for Mastodon, the instance is part of it
+  const acts = rows.filter(isDead).map(r => ({ id: 'signin:' + r.provider, tenant: r.tenant, provider: r.provider, reason: r.last_error, since: r.updated_at, connect: link(r.provider) }));
+  return acts;
 }
 
 export async function refreshDue(db, env, opts = {}) {

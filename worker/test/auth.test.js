@@ -286,6 +286,21 @@ test('APP-REUSE-1: a connect link never registers a second GitHub app', async ()
     const done = await (await handleAuth(new Request('https://x.test' + path), e, { tenant: 't', name: 'org' })).text();
     assert.match(done, /Already connected/); assert.ok(!/settings\/apps\/new/.test(done), 'connected: no manifest form');
     await store.put(db, e, 't', provider, { status: 'failed', error: 'mint HTTP 404' });
-    assert.match(await (await handleAuth(new Request('https://x.test' + path), e, { tenant: 't', name: 'org' })).text(), /settings\/apps\/new/, 'a stored app that can no longer mint is replaced');
+    const failed = await (await handleAuth(new Request('https://x.test' + path), e, { tenant: 't', name: 'org' })).text();  // NO-NEW-APP-1: an installed app that fails is repaired, never replaced
+    assert.ok(!/settings\/apps\/new/.test(failed), 'a stored, installed app that fails to mint is never replaced by a new registration');
   }
+});
+
+test('OWNER-LINKS-4: a provider connect page without the site Worker\'s internal key is sent to sign in; with it, it is served', async () => {
+  const db = makeDb(), e = { ...env(), DB: db, INTERNAL_DEPLOY_KEY: 'k-123' };
+  for (const path of ['/connect/buffer', '/connect/mastodon/start?instance=mstdn.science', '/connect/bluesky']) {
+    const r = await handleAuth(new Request('https://x.test' + path), e, { tenant: 't' });
+    assert.equal(r.status, 302); assert.match(r.headers.get('location'), /\/auth\/signin\?next=/, path);
+    const bad = await handleAuth(new Request('https://x.test' + path, { headers: { 'x-internal-key': 'guess' } }), e, { tenant: 't' });
+    assert.match(bad.headers.get('location') || '', /\/auth\/signin/, 'a wrong key is no key');
+  }
+  const ok = await handleAuth(new Request('https://x.test/connect/buffer', { headers: { 'x-internal-key': 'k-123' } }), e, { tenant: 't' });
+  assert.ok(!/\/auth\/signin/.test(ok.headers.get('location') || ''), 'with the key the connect page is served');
+  const gh = await handleAuth(new Request('https://x.test/connect/github'), e, { tenant: 't', name: 'org' });
+  assert.ok(!/\/auth\/signin/.test(gh.headers.get('location') || ''), 'the GitHub consent pages are unchanged');
 });

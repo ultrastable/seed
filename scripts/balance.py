@@ -20,7 +20,7 @@ Second loop (this module), on every fleet pass (foundation/queue.py run), server
   python3 -m foundation balance --run [--apply]   measure, correct (with --apply writes items, ops/balance.json, site/balance-data.js)
   python3 -m foundation balance --report [--publish] the measurement as JSON; --publish writes ops/balance.json and the page data only
   python3 -m foundation balance --probe           exit 0 when balanced and inside SLA (closing probe of Q-BALANCE-*)
-  python3 scripts/balance.py --gate [--apply]   the filing gate every workflow runs before it commits docs/issues
+  python3 -m foundation balance --gate [--apply]   the filing gate every workflow runs before it commits docs/issues
   python3 -m foundation balance --check           the rules are well formed (exit 1 otherwise)
 Stdlib only and free of other foundation imports, so seed/scripts/balance.py is this file and every system inherits it.
 """
@@ -29,7 +29,10 @@ import json, re, subprocess, sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]  # in the seed this file is scripts/balance.py
+_HERE = Path(__file__).resolve().parents[1]
+# One copy for every system (FLOW-BALANCE-1, USER-BACKEND-1): in a seeded system this file is scripts/balance.py at the repository root; inside the
+# platform repository it is seed/scripts/balance.py and foundation/balance.py loads it, so the root is one level higher.
+REPO = _HERE.parent if _HERE.name == "seed" and (_HERE.parent / "foundation").is_dir() else _HERE
 DATA = "doctrine/balance.json"
 STATE = "ops/balance.json"
 LEDGER = "ops/balance.jsonl"
@@ -41,8 +44,10 @@ PRIO = {"p0", "p1", "p2", "p3"}
 
 
 def cfg(root=REPO) -> dict:
-    p = Path(root) / DATA
-    return json.loads((p if p.is_file() else Path(__file__).resolve().parents[1] / DATA).read_text(encoding="utf-8"))
+    for p in (Path(root) / DATA, Path(root) / "autonomy/balance.json", _HERE / "autonomy/balance.json"):
+        if p.is_file():
+            return json.loads(p.read_text(encoding="utf-8"))
+    raise FileNotFoundError(DATA)
 
 
 def _iso(d: datetime) -> str:
@@ -374,7 +379,7 @@ def check(root=REPO) -> list[str]:
     for wf in sorted(_g.glob(str(Path(root) / ".github/workflows/*.yml"))):  # every workflow that lands items passes the one filing gate first
         t = Path(wf).read_text(encoding="utf-8")
         if re.search(r"git add\b[^\n]*\bdocs/issues\b", t) and not re.search(r"balance(\.py)? --gate", t):
-            bad.append(f"{Path(wf).name}: commits docs/issues without `python3 scripts/balance.py --gate --apply` first (FLOW-BALANCE-1)")
+            bad.append(f"{Path(wf).name}: commits docs/issues without `python3 -m foundation balance --gate --apply` first (FLOW-BALANCE-1)")
     if "superseded" in c.get("counts_as_closure", []):
         bad.append("doctrine/balance.json: superseded may never count as a closure")
     try:
