@@ -138,7 +138,7 @@ test('a breached D1 budget skips the non-essential steps, records the breach and
   const at = new Date(T0 - 600e3).toISOString().replace('T', ' ').slice(0, 19);
   db.raw.prepare('INSERT INTO cost_samples (at, target, rows_read_1h) VALUES (?,?,?)').run(at, 'org', 500000);
   const cfg = { ...config, criticality: crit, cost_budgets: [{ id: 'org', max_rows_read_per_hour: 120000 }] };
-  const r = await runTick(db, { config: cfg, now: T0 });
+  const r = await runTick(db, { config: cfg, now: T0 + 15 * 60e3 });  // SPEND-SOFT-1: off the three-hour boundary, so the deferred steps wait
   assert.deepEqual(COST_ESSENTIAL_STEPS, ['migrate', 'reconcile', 'measure', 'criticality']);
   assert.equal(r.completed, STEP_ORDER.length, 'a skip is a decision, not a failure: health stays green');
   assert.deepEqual(r.errors, []);
