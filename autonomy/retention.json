@@ -35,6 +35,11 @@
       "reason": "REACH-1: one row per post and channel; the publisher reads this week, the reach loop reads a year",
       "archive": true
     },
+    "human_inbox": {
+      "column": "at",
+      "keep_days": 90,
+      "reason": "SOCIAL-MODULE-1: public replies and mentions with the author hashed; read while they are new, never needed after a quarter"
+    },
     "_migrations": {
       "keep": "state",
       "reason": "which migrations have been applied; a record of schema state, never history to prune"
@@ -249,6 +254,14 @@
       "keep": "state",
       "reason": "GOALS-1: one row per knob with its current value; bounded by the tenant limit of 80"
     },
+    "stickiness_state": {
+      "keep": "state",
+      "reason": "STICKY-1: one row per system, rewritten every pass by the tick step stickiness"
+    },
+    "stickiness_series": {
+      "keep": "state",
+      "reason": "STICKY-1: one row per system per day; the step itself deletes rows older than 400 days"
+    },
     "progress_cadence": {
       "keep": "state",
       "reason": "PROGRESS-1: one row per system, rewritten every pass by the tick step progress"
@@ -260,6 +273,39 @@
     "trust_ledger_v2": {
       "keep": "state",
       "reason": "OL-20261118-4: exists only inside migration 0027's batch and is renamed to trust_ledger before the batch ends"
+    },
+    "cf_alerts": {
+      "column": "at",
+      "keep_days": 30,
+      "reason": "CF-ALERTS-1: one row per Cloudflare alert; settling reads the last day per type, so 30 days is ample"
+    },
+    "kg_nodes": {
+      "keep": "state",
+      "reason": "DATAGRAPH-1: one row per record of the system's own data; bi-temporal (valid_to closes a row that left the data), bounded by max_rows_total per pass"
+    },
+    "kg_edges": {
+      "keep": "state",
+      "reason": "DATAGRAPH-1: one row per connection between records, bounded by the nodes; proposed leads are settled kept or rejected within 14 days"
+    },
+    "kg_insights": {
+      "keep": "state",
+      "reason": "DATAGRAPH-1: current insights only; each pass rewrites them and deletes the ones that no longer fire"
+    },
+    "kg_runs": {
+      "keep": "managed",
+      "reason": "DATAGRAPH-1: one row per graph pass, pruned to 400 days by seed/worker/src/datagraph.js"
+    },
+    "kg_vec": {"keep": "state", "reason": "KGRAPH-AI-1: one embedding per live graph node, rewritten when the node changes"},
+    "kg_summaries": {"keep": "state", "reason": "KGRAPH-AI-1: one summary per community insight"},
+    "kg_ai_cursor": {"keep": "state", "reason": "KGRAPH-AI-1: one cursor row"},
+    "kg_cost": {"keep": "managed", "reason": "KGRAPH-AI-1: one row per day of graph AI cost"},
+    "kg_sources": {
+      "keep": "managed",
+      "reason": "Tenant engine seed/worker/src/knowledge.js (DATAGRAPH-1 built rows): one hash per source record; retired rows pruned after retain_days by runKg"
+    },
+    "kg_state": {
+      "keep": "state",
+      "reason": "Tenant engine seed/worker/src/knowledge.js: a handful of keys per tenant (last analysis, kind weights)"
     }
   }
 }

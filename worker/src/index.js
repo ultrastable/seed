@@ -2,6 +2,7 @@
 // Cron fires runTick; GET /health shows the last tick's four-line report.
 // Standard issue: first-party web analytics (analytics/analytics.js): /a.js beacon, /a/e collector, GET /api/analytics (bearer ANALYTICS_TOKEN).
 import { paced } from './pace.js';
+import { discoverRoute, heartbeat as directoryHeartbeat } from './discover.js';  // DISCOVER-1
 import { withKnobs, readGoals, registerTenant, reportReadings, knobValues } from './goals.js';  // GOALS-1
 import { tune } from './roi.js';  // BOUNDARIES-1
 import { runTick, lastTickForHealth, METRICS, ensureItem } from './tick.js';
@@ -9,27 +10,49 @@ import { claimsReleasedUnworked24h } from './doer.js';
 import { runExecutor, noteExecutor } from './executor.js';
 import { runLane, githubBudget } from './lane.js';
 import { verifyOidc, commitToMain } from './maincommit.js';  // MAIN-WRITER-1
+import { repairSites } from './uptimerepair.js';  // UPTIME-1
 import { opsBackup } from './opsbackup.js';  // BACKUP-SINK-1
-import { createMeter, guarded, readDeferred, writeDeferred } from './subreq.js';  // SUBREQUEST-METER-1
+import { snapshotD1 } from './d1snapshot.js';  // D1-SNAPSHOT-1
+import { onCloudflareAlert, settleCloudflareAlerts } from './cfalerts.js';  // CF-ALERTS-1
+import { createMeter, guarded, readDeferred, writeDeferred, capsFor, LOOP_MIN_COST } from './subreq.js';  // SUBREQUEST-METER-1
 import { ingestDeploys } from './selfaudit.js';
+import { auditApps } from './appaudit.js';  // APP-INVENTORY-1
 import { sampleCosts } from './costsample.js';
 import { readRoi } from './roi.js';  // ROI-1
+// ROI-SELF-1: when the system's own ROI verdict is pay and the account is on the free plan, one owner gate per month (buying is money, identity-bound);
+// the default in effect is the free plan with soft throttling, so nothing waits on it. The gate closes by itself once CF_PLAN=paid is set.
+export async function roiGate(db, env, config = {}) {
+  const r = await readRoi(db, { env, config });
+  const d = r.system_decision || {};
+  if (d.verdict !== 'pay' || r.plan === 'paid') return { filed: false, verdict: d.verdict };
+  const id = `ROI-PAY-${new Date().toISOString().slice(0, 7)}`;
+  const filed = await ensureItem(db, { id, title: `Gate (owner billing): Workers Paid pays for itself. ${d.reason}. Default in effect: ${d.default_in_effect}.`.slice(0, 300), kind: 'gate', owner_role: 'owner', done_check: 'the tick runs with CF_PLAN=paid', closing_probe: 'GET /api/roi plan == paid', priority: 2 });
+  return { filed, id, verdict: d.verdict };
+}
 import { sampleFreeTier, freeTierLevel, alertFreeTier } from './freetier.js';  // FREE-TIER-1
-import { recordSpend } from './spend.js';  // SPEND-SOFT-1
 import { runGate, gateCard } from './worker-gate.js';
 import { runHandoffs, makeDeployer, makeRollback, makeVersionReader } from './handoff.js';
 import { syncIssues } from './issuesync.js';
-import { sweepOpenLoops, recordSweep, lastSweep } from './sweeper.js';
-import { refreshLiveChanges, readLiveChanges, refreshFleetChanges } from './livechanges.js'; // LIVE-FRESH-1
+import { mergeForLane } from './lanemerge.js';  // LANE-WORKER-MERGE-1
+import { sweepOpenLoops, recordSweep, lastSweep, alarmStalls } from './sweeper.js';
+import { revertRedMain } from './redmain.js';  // REDMAIN-LANE-1
+import { mergeNow, prsForEvent } from './mergenow.js';
+import { refreshLiveChanges, readLiveChanges, refreshFleetChanges, classifyPending } from './livechanges.js'; // LIVE-FRESH-1, SUBSTANCE-1
 import { progressStep, readProgress } from './progress.js'; // PROGRESS-1
+import { stickinessStep, readStickiness, readQueue } from './stickiness.js'; // STICKY-1
+import { graphAiStep, readGraphAi } from './graphai.js'; // KGRAPH-AI-1
+import { datagraphStep, readGraph, readInsights, readNode, searchGraph } from './datagraph.js'; // DATAGRAPH-1
 import { watchFreshness } from './freshness.js'; // LIVE-FRESH-2
+import { watchTenantDeploys } from './tenantdeploy.js'; // TENANT-DEPLOY-1
 import { recordGovernor, readDecisions, safely as decisionSafely } from './decisions.js'; // DECISIONS-1
-import { runSocial } from './social.js';  // REACH-1
+import { runSocial, blueskyAccess } from './social.js';
+import { importCredentials, reconcileBuffer, intakeInbox, seedLinkRows } from './humans.js';  // SOCIAL-MODULE-1  // REACH-1
 import { probe as probeAgents } from './codeagent.js';
-import { hiddenByHealthOnly } from './visibility.js';
+import { hiddenByHealthOnly, publicPage } from './visibility.js';
 import config from './config.js';
 import { backendRecord } from './errors.js';  // USER-BACKEND-1
-import { governedAI, budgetView, SHARES, halted } from './budget.js';
+import { governedAI, budgetView, SHARES, halted, planOf } from './budget.js';
+import { recordSpend, readSpend, spendView } from './spend.js';  // SPEND-SOFT-1
 import { pruneAll } from './retention.js';
 import { seal, verify, trace, head, r2Sink, githubSink, archiveRows } from './auditchain.js';  // AUDIT-CHAIN-1
 import { bearerOk } from './auditauth.js';  // RETENTION-1  // SPEND-GOVERNOR-1: every model call goes through the owner's monthly budget
@@ -42,11 +65,12 @@ import { material as credMaterial } from './auth/store.js';  // HOSTS-1: the App
 import { createHosts, cloudflareHost, githubActionsHost, gcpHost, reporting, onPush, onWorkflowRun, onHostEvent, watchHosts, recordHostEvent, hookSecret, reconcileHooks, githubHookSecrets, verifyAny } from './hosts.js';  // HOSTS-1
 import { beat, watch, readPulse, failed, HEAVY_CADENCE_MIN } from './pulse.js';
 import { decide, healthView, readState } from './cutover.js';
+import { handleAppHost } from './apprepos.js';
 import { readIgnition } from './ignition.js';
 import { loopHealth } from './critloop.js';
 import { routeEvent, verifySignature, EVENT_TABLE } from './events.js';
 import { loadAnswers, saveAnswer, nextQuestion, QUESTIONS } from './interview.js';
-import { nowScreen, nextScreen, needsScreen, questionScreen, doneScreen } from './ui.js';
+import { nowScreen, nextScreen, needsScreen, questionScreen, doneScreen, graphScreen } from './ui.js';
 import { handleAnalytics, selfcheck, report, REPORT_CACHE_MINUTES } from '../../analytics/analytics.js';
 import { createAgenticHandler, DEFAULT_IDENTITY } from './agentic/handler.js';
 import { d1Store } from './agentic/adapters/d1-store.js';
@@ -63,10 +87,10 @@ export const d1Unavailable = (e) => {
   backendRecord(e, 'd1-unavailable');  // USER-BACKEND-1: the detail goes to the log, not to the caller
   return Response.json(limit ? { error: 'the daily database read allowance is used up; live data returns at 00:00 UTC', code: 'd1_read_limit' } : { error: 'database unavailable', code: 'd1_unavailable' }, { status: 503, headers: { 'cache-control': 'no-store', 'retry-after': '600' } });
 };
-const aiFor = (env) => halted(config, env) ? Promise.resolve({ ai: null, state: { mode: 'halted', why: 'HALT-1' } }) : governedAI(env.DB, env.AI || null, { config, env, share: SHARES.tick }).catch(e => { console.error('budget governor', e && e.message); return { ai: null, state: null }; });
+const aiFor = (env) => halted(config, env) ? Promise.resolve({ ai: null, state: { mode: 'halted', why: 'HALT-1' } }) : readSpend(env.DB).then(spend => governedAI(env.DB, env.AI || null, { config, env, share: SHARES.tick, spend })).catch(e => { console.error('budget governor', e && e.message); return { ai: null, state: null }; });
 const hosts = env => (env.ANALYTICS_HOSTS ? String(env.ANALYTICS_HOSTS).split(',') : [env.PUBLIC_HOST || config.org_slug + '.example']).map(h => h.trim());
 
-const LOOP_PHASE = { executor: 0, gate: 1, lane: 1, handoffs: 2, issuesync: 2, 'repo-access': 2, sweeper: 3, 'deploy-evidence': 3, social: 3, 'watchdog-gh': 3, hosts: 0, 'host-hooks': 0 };  // SUBREQUEST-ROTATION-2: four phases; HOSTS-1 probes (2-3 calls) ride with the executor, they hit the 50-subrequest cap when run every tick after the heavy groups
+const LOOP_PHASE = { executor: 0, gate: 1, lane: 1, handoffs: 2, issuesync: 2, 'repo-access': 2, sweeper: 3, 'deploy-evidence': 3, social: 3, humans: 3, 'watchdog-gh': 3, hosts: 0, 'host-hooks': 0 };  // SUBREQUEST-ROTATION-2: four phases; HOSTS-1 probes (2-3 calls) ride with the executor, they hit the 50-subrequest cap when run every tick after the heavy groups
 
 // AUDIT-CHAIN-1: archive sinks, every one that is available. R2 when the AUDIT bucket is bound; the repository as the independent second copy.
 const auditSinks = (env, token, repos) => [...(env.AUDIT ? [r2Sink(env.AUDIT)] : []), ...(token && (env.AUDIT_REPO || repos[0]) ? [githubSink({ token, repo: env.AUDIT_REPO || (repos.find(r => r.endsWith('/ops')) || repos[0]), prefix: 'ledger/' })] : [])];
@@ -89,9 +113,11 @@ export default {
     const cut = await decide(env.DB, env, { githubOk }).catch(e => ({ run: (env.SLOT || 'primary') !== 'standby', notes: ['cutover check failed: ' + String(e && e.message).slice(0, 160)] }));
     await beat(env.DB, 'cutover', async () => ({ run: cut.run, slot: cut.slot, epoch: cut.epoch, promoted: Boolean(cut.promoted), notes: cut.notes })).catch(e => console.error('cutover beat', e && e.message));
     if (!cut.run) { if (env.SLOT === 'standby' || cut.slot !== 'primary') ctx.waitUntil(refreshDue(env.DB, env).catch(() => null)); return; }
+    ctx.waitUntil(directoryHeartbeat(env, config).then(r => { if (r.sent) console.log('directory heartbeat', r.status); }).catch(e => console.error('directory heartbeat', e && e.message)));  // DISCOVER-1: daily, opt-out-able
     const gov = await aiFor(env);
     if (gov.state) console.log('budget', JSON.stringify({ mode: gov.state.mode, why: gov.state.why, neurons_today: Math.round(gov.state.usage.ai_neurons_today), cap: gov.state.allowance.ai_neurons_day }));
-    const meter = createMeter(), restoreFetch = meter.install();  // SUBREQUEST-METER-1: every fetch of this invocation is counted; one cap for the tick steps and the loops
+    const caps = capsFor(planOf(config, env));  // PLAN-1: paid plan, 1,000 planned subrequests and no rotation
+    const meter = createMeter({ cap: caps.cap }), restoreFetch = meter.install();  // SUBREQUEST-METER-1: every fetch of this invocation is counted; one cap for the tick steps and the loops
     const tickDone = runTick(env.DB, { config, env: presence(env), ai: gov.ai, budget: gov.state }).catch(e => console.error('tick', e && e.message));  // DOER-1: the AI binding reaches the in-tick doer
     ctx.waitUntil(tickDone);
     // LOOPPROOF-1: every loop below runs inside beat(): a row before it starts, its result or error after. One loop failing never stops the next,
@@ -102,25 +128,33 @@ export default {
       const cycle = Math.floor((Number(_event && _event.scheduledTime) || Date.now()) / (HEAVY_CADENCE_MIN * 60e3));
       // PACE-2: a heavy loop whose recent runs returned nothing skips cycles (pace.js); the skipped slot is still a beat, so the clock sees a decision.
       const knobConfig = await withKnobs(env.DB, config);  // GOALS-1: knob values the control loop set (pace.idle_runs, pace.max_stride) are what paced() reads
-      const carried = new Set(await readDeferred(env.DB)), deferred = new Set(), guard = guarded(meter, deferred, failed);  // SUBREQUEST-METER-1: a loop that was deferred runs first next time, in any phase
-      const tuningNow = await freeTierLevel(env.DB).then(l => (l && l.resources) ? tune(Object.fromEntries(Object.entries(l.resources).map(([k, r]) => [k, r.frac]))) : null).catch(e => { console.error('tuning unread:', e && e.message); return null; });  // BOUNDARIES-1: applied to every paceable loop below
-      const b = (loop, fn) => (loop in LOOP_PHASE && LOOP_PHASE[loop] !== phase && !carried.has(loop)) ? Promise.resolve(undefined) : beat(env.DB, loop, async () => (loop in LOOP_PHASE && await paced(env.DB, loop, cycle, knobConfig, tuningNow)) || guard(loop, fn), { everyMin: loop in LOOP_PHASE ? HEAVY_CADENCE_MIN : 10 }).then(r => { console.log(loop, JSON.stringify(r === undefined ? null : r)); return r; });
+      const carried = new Set(await readDeferred(env.DB)), deferred = new Set(), guard = guarded(meter, deferred, failed, LOOP_MIN_COST, caps.shares);  // SUBREQUEST-METER-1: a loop that was deferred runs first next time, in any phase
+      const tuningFree = await freeTierLevel(env.DB, Date.now(), planOf(config, env)).then(l => (l && l.resources) ? tune(Object.fromEntries(Object.entries(l.resources).map(([k, r]) => [k, r.frac]))) : null).catch(e => { console.error('tuning unread:', e && e.message); return null; });  // BOUNDARIES-1: applied to every paceable loop below
+      const spendNow = await readSpend(env.DB);  // SPEND-SOFT-1: the spend throttle's pace knob stretches idle loops too; the larger stretch wins
+      const tuningNow = spendNow.knobs && spendNow.knobs.pace > 1 && (!tuningFree || tuningFree.action !== 'slow' || tuningFree.pace_factor < spendNow.knobs.pace) ? { action: 'slow', pace_factor: spendNow.knobs.pace, text: `spend ${spendNow.level}` } : tuningFree;
+      const b = (loop, fn) => (caps.rotate && loop in LOOP_PHASE && LOOP_PHASE[loop] !== phase && !carried.has(loop)) ? Promise.resolve(undefined) : beat(env.DB, loop, async () => (loop in LOOP_PHASE && await paced(env.DB, loop, cycle, knobConfig, tuningNow)) || guard(loop, fn), { everyMin: loop in LOOP_PHASE && caps.rotate ? HEAVY_CADENCE_MIN : 10 }).then(r => { console.log(loop, JSON.stringify(r === undefined ? null : r)); return r; });
       const steps = [], step = (loop, fn) => { steps.push([loop, fn]); };
       const tenant = env.TENANT || config.org_slug || 'default';
       const repos = config.github_repos || (env.GITHUB_REPOS ? String(env.GITHUB_REPOS).split(',') : []);
       const main = repos.find(r => r.endsWith('/ultrastable')) || repos[0];
       // FREE-TIER-1: the usage sample is read first. It ran last and was starved by the 50-subrequest limit ("Too many subrequests" at 00:10 UTC 2026-11-18), which left the governor without a reading.
-      const freeTier = await sampleFreeTier(env.DB, { token: env.CF_ANALYTICS_TOKEN, account_id: (config.cost_budgets && config.cost_budgets[0] && config.cost_budgets[0].account_id) || env.CF_ACCOUNT_ID }).catch(e => ({ error: String(e && e.message).slice(0, 120) }));
-      try { await recordSpend(env.DB, { meters: freeTier.meters, error: freeTier.error || null, config, env, now: new Date() }); } catch (e) { console.error('spend unrecorded:', e && e.message); }  // SPEND-SOFT-1: today's estimated bill and the throttle level the tick reads
-      { const al = await alertFreeTier(env.DB, freeTier); if (al.error) console.error('free-tier alert unfiled:', al.error); }  // READ-BUDGET-8: an item is filed once a day per resource when a free limit is projected to pass 70%
+      const freeTier = await sampleFreeTier(env.DB, { plan: planOf(config, env), token: env.CF_ANALYTICS_TOKEN, account_id: (config.cost_budgets && config.cost_budgets[0] && config.cost_budgets[0].account_id) || env.CF_ACCOUNT_ID }).catch(e => ({ error: String(e && e.message).slice(0, 120) }));
+      { const al = await alertFreeTier(env.DB, freeTier); if (al.error) console.error('free-tier alert unfiled:', al.error); }
+      await recordSpend(env.DB, { meters: freeTier.meters, error: freeTier.error || null, config, env, now: new Date() });  // SPEND-SOFT-1: today's estimated bill and the throttle level every later step reads
+      if (new Date().getUTCMinutes() < 10) { const g = await roiGate(env.DB, env, config).catch(e => ({ error: String(e && e.message).slice(0, 120) })); if (g && g.error) console.error('roi gate:', g.error); }  // ROI-SELF-1: hourly, the system's own verdict on paying  // READ-BUDGET-8: an item is filed once a day per resource when a free limit is projected to pass 70%
       await decisionSafely(() => recordGovernor(env.DB, freeTier));  // DECISIONS-1: the level just set is a decision, scored at a later sample
       await b('credentials', () => refreshDue(env.DB, env));  // AUTH-1: refresh runs first so nothing lapses
       const t = await getToken(env.DB, env, tenant, 'github-app').catch(e => ({ ok: false, error: e && e.message }));  // one token for the lane and the executor, minted from the GitHub App (a bound GITHUB_TOKEN is only a fallback)
       const token = (t && t.ok && t.token) || env.GITHUB_TOKEN || '';
       await b('live-changes', () => refreshLiveChanges({ db: env.DB, token, repo: main }));  // LIVE-FRESH-2: own early step; inside the sweeper it ran after 32 of 46 subrequests were spent and never wrote, so /live froze
       await b('fleet-changes', () => refreshFleetChanges({ db: env.DB, token, repos: ((config.progress || {}).systems || []).map(x => x.repo).filter(r => r && r !== main) }));  // PROGRESS-1: the other repositories, at most hourly each
+      await b('substance', () => classifyPending({ db: env.DB, token, max: 2 }));  // SUBSTANCE-1: two merged PRs per pass are classified from their diff, so trivial merges never count as progress
+      await b('stickiness', () => stickinessStep({ db: env.DB, config, ensureItem }));  // STICKY-1: freshness, breadth, depth and diversity of every system's content; a stale or thin one files STICKY-<system>, and its unpromoted entries become the social queue
+      await b('knowledge-graph', () => datagraphStep({ db: env.DB, config, ensureItem }));  // DATAGRAPH-1: every table of this system's own D1 becomes a graph (rows are nodes, references and mentioned ids are edges), kept bi-temporally; hubs, communities, bridges and orphans are read each pass, Adamic-Adar link leads are settled against later data, and a mostly unconnected kind files KG-ORPHANS-<kind>
+      await b('graph-ai', () => graphAiStep({ db: env.DB, ai: gov.ai || null, config, spend: spendNow, ensureItem }));  // KGRAPH-AI-1: embeddings, extracted relations and community summaries on new graph nodes, scaled by the spend throttle
       await b('progress', () => progressStep({ db: env.DB, config, token, ensureItem }));  // PROGRESS-1: release cadence monitor; a slow system has its producers dispatched, a stalled one files STALL-<system>
       await b('freshness', () => watchFreshness({ token, repo: main, siteUrl: env.PUBLIC_ORIGIN || 'https://ultrastable.io' }));  // LIVE-FRESH-2: a stale published snapshot re-dispatches its own publisher
+      if (new Date().getUTCMinutes() % 30 < 10) await b('tenant-deploy', () => watchTenantDeploys({ token, repo: main }));  // TENANT-DEPLOY-1: a tenant repository's merge ships within the hour (twice an hour, ~4 subrequests)
       step('executor', async () => { const r = await runExecutor({ ...env, TENANT: env.TENANT || config.org_slug, AI: gov.ai || undefined, GITHUB_DISPATCH_TOKEN: token || env.GITHUB_DISPATCH_TOKEN, GITHUB_REPO: env.GITHUB_REPO || repos[0] }); await noteExecutor(env.DB, r); return r; });
       step('gate', async () => { const g = await runGate({ token, repos }); await gateCard(env.DB, g, { origin: env.PUBLIC_ORIGIN || '' }); return g; });  // ZERO-MINUTES-1, Q-GATE-403
       const ghBudget = githubBudget(env.GITHUB_CALLS_PER_TICK || config.github_calls_per_tick);  // GITHUB-BUDGET-1: one GitHub call budget for the lane and the handoffs of this tick (default 40)
@@ -130,13 +164,16 @@ export default {
       step('issuesync', () => syncIssues({ db: env.DB, token, repo: main }));  // ISSUESYNC-1: filed roadmap items reach the queue on the server, no Actions needed
       step('repo-access', () => checkRepoAccess(env.DB, env, tenant, repos, { token, origin: env.PUBLIC_ORIGIN || '' }));  // REPO-ACCESS-1
       step('social', () => runSocial({ db: env.DB, env, tenant }));  // REACH-1: posts the due calendar item to the channels linked at /connect
-      step('sweeper', async () => { const sw = await sweepOpenLoops({ token, repos }); await recordSweep(env.DB, sw); return sw; });  // SERVER-OWNS-LOOPS-1
+      step('humans', async () => ({ seeded: await seedLinkRows(env.DB, env, tenant), buffer: await reconcileBuffer({ db: env.DB, env, tenant }), inbox: new Date().getUTCMinutes() < 10 ? await intakeInbox({ db: env.DB, env, tenant, blueskyAccess }) : 'hourly' }));  // SOCIAL-MODULE-1: read-back of Buffer posts; replies and mentions become inbox rows, hourly
+      step('sweeper', async () => { const sw = await sweepOpenLoops({ token, repos }); await recordSweep(env.DB, sw); sw.stall_items = await alarmStalls(env.DB, sw, ensureItem); return sw; });  // PR-LATENCY-1  // SERVER-OWNS-LOOPS-1
+      step('redmain', () => revertRedMain({ token, repo: repos.find(r => r.endsWith('/ultrastable')) || main }));  // REDMAIN-LANE-1: a main red past 15 minutes gets a revert PR the lane merges
+      step('app-audit', () => auditApps(env.DB, env, tenant));  // APP-INVENTORY-1: live app inventory, extra installations of our own apps removed, daily
       step('deploy-evidence', () => ingestDeploys(env.DB, { token, repo: repos.find(r => r.endsWith('/ultrastable')) }));  // SELFAUDIT-1: independent deploy evidence feeds k_eff
       step('host-hooks', async () => reconcileHooks({ db: env.DB, token, repos, origin: env.PUBLIC_ORIGIN || 'https://ultrastable.io', secret: await hookSecret(env, 'github') }));  // HOSTS-1: the server creates, repairs and re-checks its own repo webhook; nothing is set up by hand
       step('hosts', () => watchHosts({ db: env.DB, registry: hostRegistry(env, token, main), token, repo: main }));  // HOSTS-1: health probe of every host, stall detection, failover redispatch
       step('watchdog-gh', () => watchGithub({ token, repo: main }));  // RESILIENCE-1: the Worker restarts the GitHub watchdog when it stalls; the GitHub watchdog restarts this tick
       for (const [loop, fn] of [...steps].sort((a, z) => carried.has(z[0]) - carried.has(a[0]))) await b(loop, fn);  // SUBREQUEST-METER-1: deferred loops first, then the phase's own
-      await b('cost-samples', async () => ({ free_tier: freeTier, samples: await sampleCosts(env.DB, { token: env.CF_ANALYTICS_TOKEN, budgets: config.cost_budgets }), retention: await pruneAll(env.DB, { rules: config.retention, archive: (table, rows) => archiveRows(env.DB, table)(rows) }), audit: await seal(env.DB, auditSinks(env, token, repos)) }));  // AUDIT-CHAIN-1: aged rows are chained, then sealed to the archive  // RETENTION-1: the daily prune rides the hourly cost beat (once a day by its own gate)  // COSTGUARD-1: hourly D1 rows-read sample feeds the D1 budget failure modes
+      await b('cost-samples', async () => ({ free_tier: freeTier, samples: await sampleCosts(env.DB, { token: env.CF_ANALYTICS_TOKEN, budgets: config.cost_budgets }), retention: await pruneAll(env.DB, { rules: config.retention, archive: (table, rows) => archiveRows(env.DB, table)(rows) }), audit: await seal(env.DB, auditSinks(env, token, repos)), snapshot: await snapshotD1(env.DB, env.AUDIT).catch(e => ({ error: String(e && e.message).slice(0, 160) })), cf_alerts: await settleCloudflareAlerts(env.DB).catch(e => ({ error: String(e && e.message).slice(0, 160) })) }));  // D1-SNAPSHOT-1: the daily copy of D1 into the AUDIT bucket, read back before it counts  // AUDIT-CHAIN-1: aged rows are chained, then sealed to the archive  // RETENTION-1: the daily prune rides the hourly cost beat (once a day by its own gate)  // COSTGUARD-1: hourly D1 rows-read sample feeds the D1 budget failure modes
       const wd = await writeDeferred(env.DB, deferred); if (wd && wd.error) console.error(wd.error);
     })().catch(e => console.error('lane', e && e.message));
     ctx.waitUntil(loopsDone);
@@ -151,7 +188,10 @@ export default {
     if (hiddenByHealthOnly(env, request.method, url.pathname)) return new Response('Not found', { status: 404 });
     const au = await handleAuth(request, env, { tenant: env.TENANT || config.org_slug || 'default', name: config.org_slug, repos: config.github_repos || (env.GITHUB_REPOS ? String(env.GITHUB_REPOS).split(',') : []) });
     if (au) return au;
-    if (halted(config, env) && (url.pathname === '/hook/github' || url.pathname === '/hook/host' || url.pathname === '/pulse/watch')) return Response.json({ halted: true }, { status: 202 });  // HALT-1
+    { const ah = await handleAppHost(request, env, { tenant: env.TENANT || config.org_slug || 'default' }); if (ah) return ah; }  // APP-REPO-1: repositories and one-repository tokens for apps this system hosts
+    if (halted(config, env) && (url.pathname === '/hook/github' || url.pathname === '/hook/host' || url.pathname === '/hook/cloudflare' || url.pathname === '/pulse/watch')) return Response.json({ halted: true }, { status: 202 });  // HALT-1
+    { const d = discoverRoute(url, env, config); if (d) return d; }  // DISCOVER-1: public manifest, nothing private
+    if (url.pathname === '/hook/cloudflare' && request.method === 'POST') return onCloudflareAlert(request, { db: env.DB, secret: env.CF_ALERT_SECRET, fileItem: (it) => ensureItem(env.DB, it) });  // CF-ALERTS-1: Cloudflare's own alerts become queue items
     if (url.pathname === '/hook/github' && request.method === 'POST') {  // event-driven trigger: signed GitHub webhook wakes a role now
       const body = await request.text();
       if (!(await verifyAny(verifySignature, await githubHookSecrets(env, () => credMaterial(env.DB, env, env.TENANT || config.org_slug || 'default', 'github-app')), body, request.headers.get('x-hub-signature-256')))) return Response.json({ error: 'bad signature' }, { status: 401 });
@@ -163,9 +203,16 @@ export default {
           : onWorkflowRun({ token: tok, payload });
         if (ctx && ctx.waitUntil) ctx.waitUntil(job.catch(e => console.error('hosts hook', e && e.message))); else await job;
       }
+      const mn = prsForEvent(ev, payload);  // MERGE-NOW-1: a PR event, a finished check suite or a move of main is acted on in this request, not on the next tick
+      if (mn) {
+        const job = getToken(env.DB, env, env.TENANT || config.org_slug || 'default', 'github-app').catch(() => null)
+          .then(t => mergeNow({ token: (t && t.ok && t.token) || env.GITHUB_TOKEN || '', repo: mn.repo, numbers: mn.numbers }))
+          .then(r => { console.log('merge-now', JSON.stringify(r)); return r; });
+        if (ctx && ctx.waitUntil) ctx.waitUntil(job.catch(e => console.error('merge-now', e && e.message))); else await job;
+      }
       const hit = routeEvent(ev, payload, EVENT_TABLE);
-      if (!hit) return Response.json({ routed: false }, { status: 202 });
-      const ft = await freeTierLevel(env.DB).catch(() => null);  // FREE-TIER-1: an event never wakes an extra tick (model calls, D1 reads) once the day's free allowance is at risk; the 10-minute tick still takes the item
+      if (!hit) return Response.json({ routed: false, merge_now: Boolean(mn) }, { status: 202 });
+      const ft = await freeTierLevel(env.DB, Date.now(), planOf(config, env)).catch(() => null);  // FREE-TIER-1: an event never wakes an extra tick (model calls, D1 reads) once the day's free allowance is at risk; the 10-minute tick still takes the item
       if (ft && ft.level !== 'ok') return Response.json({ routed: false, throttled: ft.level, ...hit }, { status: 202 });
       const work = aiFor(env).then(g => runTick(env.DB, { config, env: presence(env), wake: hit.role, ai: g.ai, budget: g.state }));
       if (ctx && ctx.waitUntil) ctx.waitUntil(work); else await work;
@@ -186,6 +233,23 @@ export default {
       const t = await getToken(env.DB, env, env.TENANT || config.org_slug || 'default', 'github-app').catch(() => null);
       return opsBackup(request, { token: (t && t.ok && t.token) || '', repo: env.OPS_REPO || 'ultrastable/ops' });
     }
+    if (url.pathname === '/api/uptime/repair' && request.method === 'POST') {  // UPTIME-1: the uptime worker's repair hand (service binding): redeploys the site with the org's own GitHub App; one fixed workflow, throttled, no input used
+      if (halted(config, env)) return Response.json({ halted: true }, { status: 202 });  // HALT-1
+      const t = await getToken(env.DB, env, env.TENANT || config.org_slug || 'default', 'github-app').catch(() => null);
+      const r = await repairSites({ token: (t && t.ok && t.token) || '', repo: env.MAIN_REPO || env.OIDC_REPO || 'ultrastable/ultrastable' });
+      return Response.json(r, { status: r.ok ? 200 : 202 });
+    }
+    if (url.pathname === '/api/lane/merge' && request.method === 'POST') {  // LANE-WORKER-MERGE-1: the lane's merge for a PR that changes workflows, done with the org's own GitHub App
+      if (halted(config, env)) return Response.json({ halted: true }, { status: 202 });  // HALT-1
+      const repo = env.MAIN_REPO || env.OIDC_REPO || 'ultrastable/ultrastable';
+      const bearer = /^Bearer (.+)$/.exec(request.headers.get('authorization') || '');
+      const who = bearer ? await verifyOidc(bearer[1], { repo }).catch(e => ({ ok: false, why: String(e && e.message) })) : { ok: false, why: 'no bearer' };
+      if (!who.ok) return new Response('Not found', { status: 404 });
+      let body; try { body = await request.json(); } catch { return Response.json({ ok: false, error: 'bad json' }, { status: 400 }); }
+      const t = await getToken(env.DB, env, env.TENANT || config.org_slug || 'default', 'github-app').catch(() => null);
+      const r = await mergeForLane({ token: (t && t.ok && t.token) || '', repo, pr: body.pr, sha: body.sha });
+      return Response.json(r, { status: r.status });
+    }
     if (url.pathname === '/api/main/commit' && request.method === 'POST') {  // MAIN-WRITER-1: workflow data commits to main, written with the org's own GitHub App (exempt from the main ruleset)
       if (halted(config, env)) return Response.json({ halted: true }, { status: 202 });  // HALT-1
       const repo = env.MAIN_REPO || env.OIDC_REPO || 'ultrastable/ultrastable';
@@ -205,6 +269,7 @@ export default {
       store: d1Store(env.DB), registries: staticRegistries(config.registries || {}), auth: bearerAuth, telemetry: consoleTelemetry,
       identity: { ...DEFAULT_IDENTITY, slug: config.org_slug, name: config.org_slug },
     });
+    if (url.pathname === '/internal/social/import' && request.method === 'POST') { try { return await importCredentials(env.DB, env, env.TENANT || config.org_slug || 'default', request); } catch (e) { return d1Unavailable(e); } }  // SOCIAL-MODULE-1: token-gated; seals a channel token, answers names only
     if (url.pathname === '/api/audit/head') { try { return Response.json(await head(env.DB), { headers: { 'cache-control': 'no-store' } }); } catch (e) { return d1Unavailable(e); } }  // public: the hash anyone can write down to anchor the trail
     if (url.pathname === '/api/audit/verify' || url.pathname === '/api/audit/trace') {  // owner-only (bearer ANALYTICS_TOKEN or INTERNAL_DEPLOY_KEY)
       if (!bearerOk(request, env)) return Response.json({ error: 'unauthorized' }, { status: 401 });
@@ -215,9 +280,23 @@ export default {
         return Response.json(r, { headers: { 'cache-control': 'no-store' } });
       } catch (e) { return d1Unavailable(e); }
     }
+    if (url.pathname === '/api/graph/ai') { try { return Response.json(await readGraphAi(env.DB), { headers: { 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // KGRAPH-AI-1: the AI layer's cost probe and summaries
+    if (url.pathname === '/api/graph' || url.pathname === '/api/graph/insights' || url.pathname === '/api/graph/node' || url.pathname === '/api/graph/search' || url.pathname === '/graph') {  // DATAGRAPH-1: the knowledge graph's read side (summary, insights and leads, a node with its neighbourhood for retrieval, label search, the page)
+      try {
+        const v = { open: bearerOk(request, env), publicKinds: (config.knowledge_graph && config.knowledge_graph.public_kinds) || [] };  // the owner's bearer sees every record; anyone else sees counts and declared public kinds only
+        const h = { headers: { 'cache-control': v.open ? 'no-store' : 'public, max-age=60', 'access-control-allow-origin': '*' } };
+        if (url.pathname === '/api/graph') return Response.json(await readGraph(env.DB, v), h);
+        if (url.pathname === '/api/graph/insights') return Response.json(await readInsights(env.DB, v), h);
+        if (url.pathname === '/api/graph/search') return Response.json(await searchGraph(env.DB, url.searchParams.get('q'), v), h);
+        if (url.pathname === '/api/graph/node') { const n = await readNode(env.DB, String(url.searchParams.get('id') || ''), { ...v, depth: url.searchParams.get('depth') === '2' ? 2 : 1 }); return n ? Response.json(n, h) : Response.json({ error: 'not_found', message: 'No record with that id is in the public graph.' }, { status: 404 }); }
+        return graphScreen({ graph: await readGraph(env.DB, { publicKinds: v.publicKinds }), insights: await readInsights(env.DB, { publicKinds: v.publicKinds }) });
+      } catch (e) { return d1Unavailable(e); }
+    }
+    if (url.pathname === '/api/stickiness') { try { return Response.json(await readStickiness(env.DB), { headers: { 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // STICKY-1
+    { const qm = /^\/api\/stickiness\/queue\/([a-z0-9-]{1,60})\.json$/.exec(url.pathname); if (qm) { try { return Response.json(await readQueue(env.DB, qm[1]), { headers: { 'cache-control': 'public, max-age=300' } }); } catch (e) { return d1Unavailable(e); } } }  // STICKY-1: the queue the core social module drains for this system
     if (url.pathname === '/api/progress') { try { return Response.json(await readProgress(env.DB, config), { headers: { 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // PROGRESS-1
     if (url.pathname === '/api/live/changes') { try { const rs = config.github_repos || (env.GITHUB_REPOS ? String(env.GITHUB_REPOS).split(',') : []); return Response.json(await readLiveChanges(env.DB, rs.find(r => r.endsWith('/ultrastable')) || rs[0] || null), { headers: { 'cache-control': 'public, max-age=60' } }); } catch (e) { return d1Unavailable(e); } }  // LIVE-FRESH-1
-    if (url.pathname === '/api/roi') { try { return Response.json(await readRoi(env.DB, { env }), { headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // ROI-1
+    if (url.pathname === '/api/roi') { try { return Response.json(await readRoi(env.DB, { env, config }), { headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // ROI-1
     if (url.pathname === '/api/decisions') { try { return Response.json(await readDecisions(env.DB), { headers: { 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // DECISIONS-1
     if (url.pathname === '/api/goals' && request.method === 'GET') {  // GOALS-READS-1: readGoals scans 14 days of samples and the loop beats (tens of thousands of D1 rows read), so the answer is cached at the edge for 10 minutes and a failed refresh serves the last good copy
       const cache = typeof caches !== 'undefined' ? caches.default : null, key = new Request(url.origin + '/api/goals', { method: 'GET' });
@@ -234,7 +313,8 @@ export default {
         return Response.json({ ok: true, readings: await reportReadings(env.DB, String(body.tenant || ''), body.readings) });
       } catch (e) { return d1Unavailable(e); }
     }
-    if (url.pathname === '/api/budget') { try { return Response.json(await budgetView(env.DB, { config, env }), { headers: { 'cache-control': 'no-store' } }); } catch (e) { return d1Unavailable(e); } }  // SPEND-GOVERNOR-1: the knob, what it buys, what was used, the mode
+    if (url.pathname === '/api/spend') { try { return Response.json(spendView(await readSpend(env.DB), url.searchParams.get('tenant')), { headers: { 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' } }); } catch (e) { return d1Unavailable(e); } }  // SPEND-SOFT-1: today's estimate, level, knobs and per-tenant shares
+    if (url.pathname === '/api/budget') { try { return Response.json(await budgetView(env.DB, { config, env, spend: await readSpend(env.DB) }), { headers: { 'cache-control': 'no-store' } }); } catch (e) { return d1Unavailable(e); } }  // SPEND-GOVERNOR-1: the knob, what it buys, what was used, the mode
     const ag = await agentic(request, env);
     if (ag) return ag;
     const an = await handleAnalytics(request, env, { hosts: hosts(env) });
@@ -249,13 +329,18 @@ export default {
       const r = await watch(env.DB, async () => { const g = await aiFor(env); return runTick(env.DB, { config, env: presence(env), ai: g.ai, budget: g.state }); }, { config }).catch(e => ({ ok: false, error: String(e && e.message).slice(0, 200) }));
       return Response.json(r, { status: r.ok ? 200 : 503, headers: { 'cache-control': 'no-store' } });
     }
+    if (url.pathname === '/' && request.method === 'GET' && env.PUBLIC_HEALTH_ONLY === '1') {  // FULLSTACK-1: a health-only system still has a public front end
+      let last; try { last = await lastTickForHealth(env.DB); } catch (e) { return d1Unavailable(e); }
+      return publicPage({ name: config.org_slug, last, ignition: await readIgnition(env.DB).catch(() => null) });
+    }
     if (url.pathname === '/health') {
       if (halted(config, env)) return Response.json({ ok: true, halted: true, org: config.org_slug, why: 'HALT-1: the owner stopped every loop; pages keep serving' });
       let last; try { last = await lastTickForHealth(env.DB); } catch (e) { return d1Unavailable(e); }
       const ok = Boolean(last && last.steps_completed === last.steps_total);
       const released = await claimsReleasedUnworked24h(env.DB, Date.now()).catch(() => null);  // workers#173 closing probe, target 0
       const cutover = await healthView(env.DB, env).catch(() => null);  // ACCOUNT-SPLIT-2: read by the peer account's tick every beat
-      return Response.json({ ok, org: config.org_slug, last_tick: last || null, claims_released_unworked_24h: released, cutover }, { status: ok || (cutover && cutover.slot !== 'primary') ? 200 : 503 });
+      const ign = await readIgnition(env.DB).catch(() => null);  // SEED-AUTONOMY-1: the stage this system read for itself, so the launcher can tell ticking from autonomous without another route
+      return Response.json({ ok, org: config.org_slug, last_tick: last || null, claims_released_unworked_24h: released, cutover, ignition: ign ? { stage: ign.stage, since: ign.since, at: ign.at, blocking: ign.blocking ? { stage: ign.blocking.stage, why: String(ign.blocking.why || '').slice(0, 400) } : null } : null }, { status: ok || (cutover && cutover.slot !== 'primary') ? 200 : 503 });
     }
     if (url.pathname === '/live' || url.pathname === '/metrics/criticality.json') {  // CRITICALITY-1: k_eff of the last tick
       const c = await readCriticality(env.DB);

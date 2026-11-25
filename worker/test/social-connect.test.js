@@ -6,7 +6,7 @@ import { makeDb } from './d1shim.js';
 import { newKey } from '../src/auth/seal.js';
 import { handleAuth } from '../src/auth/routes.js';
 import * as store from '../src/auth/store.js';
-import { runSocial } from '../src/social.js';
+import { runSocial, verifyRelay } from '../src/social.js';
 import { dpopProof, newDpopKey } from '../src/auth/atproto.js';
 
 const ORIGIN = 'https://seed.example.com', NOW = Date.parse('2026-11-17T12:00:00Z');
@@ -58,8 +58,10 @@ test('Bluesky: atproto OAuth with PAR, PKCE and DPoP; account bound to its issue
     if (u === 'https://pds.example.net/.well-known/oauth-protected-resource') return J({ authorization_servers: ['https://bsky.social'] });
     return NF;
   };
-  const meta = await handleAuth(new Request(ORIGIN + '/.well-known/oauth-client/bluesky.json'), env, { tenant: 't', fetch: f });
-  const md = await meta.json(); assert.equal(md.dpop_bound_access_tokens, true); assert.equal(md.redirect_uris[0], ORIGIN + '/connect/bluesky/callback'); assert.equal(md.client_id, ORIGIN + '/.well-known/oauth-client/bluesky.json'); assert.equal(md.token_endpoint_auth_method, 'private_key_jwt', 'a confidential client: its refresh tokens last 180 days, a public one 2 weeks'); assert.equal(md.jwks_uri, ORIGIN + '/.well-known/oauth-client/bluesky-jwks.json');
+  const legacy = await (await handleAuth(new Request(ORIGIN + '/.well-known/oauth-client/bluesky.json'), env, { tenant: 't', fetch: f })).json();
+  assert.equal(legacy.token_endpoint_auth_method, 'none', 'LEGACY-CLIENT-1: sessions issued to the public client keep refreshing'); assert.equal(legacy.client_id, ORIGIN + '/.well-known/oauth-client/bluesky.json');
+  const meta = await handleAuth(new Request(ORIGIN + '/.well-known/oauth-client/bluesky-c.json'), env, { tenant: 't', fetch: f });
+  const md = await meta.json(); assert.equal(md.dpop_bound_access_tokens, true); assert.equal(md.redirect_uris[0], ORIGIN + '/connect/bluesky/callback'); assert.equal(md.client_id, ORIGIN + '/.well-known/oauth-client/bluesky-c.json'); assert.equal(md.token_endpoint_auth_method, 'private_key_jwt', 'a confidential client: its refresh tokens last 180 days, a public one 2 weeks'); assert.equal(md.jwks_uri, ORIGIN + '/.well-known/oauth-client/bluesky-jwks.json');
   const ks = await (await handleAuth(new Request(md.jwks_uri), env, { tenant: 't', fetch: f })).json(); assert.equal(ks.keys.length, 1); assert.equal(ks.keys[0].d, undefined, 'only the public half is served');
   const r = await get(env, '/connect/bluesky/start', f); assert.equal(r.status, 302);
   const loc = new URL(r.headers.get('location')); assert.equal(loc.searchParams.get('request_uri'), 'urn:par:1');
@@ -108,11 +110,12 @@ test('publisher: nothing linked means no network call; linked Mastodon posts the
   const f = async (u, init = {}) => { calls++; u = String(u);
     if (u.endsWith('/gate.json')) return J(gate); if (u.endsWith('/calendar.json')) return J(cal);
     if (u === 'https://mastodon.social/api/v1/statuses') { seen.push(JSON.parse(init.body).status); return J({ url: 'https://mastodon.social/@u/1' }); }
+    if (u === 'https://mastodon.social/api/v1/statuses/1') return J({ id: '1' });
     return NF; };
   assert.deepEqual(await runSocial({ db: env.DB, env, fetch: f, now: NOW, tenant: 't' }), { skipped: 'no channel connected' }); assert.equal(calls, 0);
   await store.put(env.DB, env, 't', 'oauth:mastodon', { secret: {}, meta: { instance: 'mastodon.social' }, access: 'tok', status: 'ok' });
   const r = await runSocial({ db: env.DB, env, fetch: f, now: NOW, tenant: 't' });
-  assert.equal(r.id, 'ev:1'); assert.equal(r.results.mastodon, 'posted');
+  assert.equal(r.id, 'ev:1'); assert.equal(r.results.mastodon, 'verified', 'posted only once the public URL reads back');
   const r2 = await runSocial({ db: env.DB, env, fetch: f, now: NOW + 3600e3, tenant: 't' });
   assert.equal(seen[0], 'Shipped by the system itself: a thing.', 'events go first'); assert.equal(r2.id, 'old', 'the next due item goes out, the posted one never repeats');
   const r3 = await runSocial({ db: env.DB, env, fetch: f, now: NOW + 7200e3, tenant: 't' }); assert.equal(r3.skipped, 'rate limit', JSON.stringify(r3));
@@ -174,4 +177,93 @@ import { priority } from '../src/social.js';
 test('SOCIAL-TENANTS-1: meta-story first, tenant changes, tenant backlog, then platform events', () => {
   const o = [{ arm: 'shipped', kind: 'event' }, { arm: 'ps-solution', kind: 'backlog' }, { arm: 'ps-problem', kind: 'event' }, { arm: 'meta-story' }, { arm: 'proof' }].sort((a, b) => priority(a) - priority(b)).map(p => p.arm);
   assert.deepEqual(o, ['meta-story', 'ps-problem', 'ps-solution', 'shipped', 'proof']);
+});
+
+// THOUGHT-1: white papers go to LinkedIn as well; other posts never do. Bluesky links are clickable. A failed send waits a day.
+test('THOUGHT-1: a paper post reaches LinkedIn with its own long text; an event never goes to LinkedIn; failures back off a day', async () => {
+  const { liEscape, liVersions, linkFacets } = await import('../src/social.js');
+  assert.equal(liEscape('a (b) @c #d_e'), 'a \\(b\\) \\@c \\#d\\_e');
+  assert.deepEqual(liVersions(NOW, null), ['202610', '202609', '202608', '202607']);
+  assert.deepEqual(linkFacets('é https://u.io/x y')[0].index, { byteStart: 3, byteEnd: 17 });
+  const env = mk(); const sent = [];
+  const gate = { kill: false, mode: 'live', max_posts_per_day: 5, max_posts_per_week: 20, paused_channels: [] };
+  const cal = { posts: [
+    { id: 'ev:1', date: '2026-11-17', text: 'Shipped by the system itself: a thing.', kind: 'event', arm: 'shipped' },
+    { id: 'paper:x:1of2:2026-11-17', date: '2026-11-17', kind: 'paper', arm: 'paper', text: 'A short paper summary. https://ultrastable.io/research/x', url: 'https://ultrastable.io/research/x',
+      texts: { mastodon: 'Medium text.', linkedin: 'Long (text) for LinkedIn.' }, channels: ['bluesky', 'mastodon', 'linkedin'] }] };
+  let liFail = false, versions = [];
+  const f = async (u, init = {}) => { u = String(u);
+    if (u.endsWith('/gate.json')) return J(gate); if (u.endsWith('/calendar.json')) return J(cal);
+    if (u === 'https://mastodon.social/api/v1/statuses') { sent.push(['mastodon', JSON.parse(init.body).status]); return J({ url: 'm' }); }
+    if (u === 'https://api.linkedin.com/v2/userinfo') return J({ sub: 'abc' });
+    if (u === 'https://api.linkedin.com/rest/posts') { versions.push(init.headers['linkedin-version']); if (liFail) return J({}, 500); if (versions.length === 1) return J({}, 426); const b = JSON.parse(init.body); sent.push(['linkedin', b.commentary, b.author, b.content.article.source]); return J({}, 201, { 'x-restli-id': 'urn:li:share:1' }); }
+    return NF; };
+  await store.put(env.DB, env, 't', 'oauth:mastodon', { secret: {}, meta: { instance: 'mastodon.social' }, access: 'tok', status: 'ok' });
+  await store.put(env.DB, env, 't', 'oauth:linkedin', { secret: {}, meta: {}, access: 'li', expiresAt: NOW + 864e5 * 30, status: 'ok' });
+  const r1 = await runSocial({ db: env.DB, env, fetch: f, now: NOW, tenant: 't' });
+  assert.equal(r1.id, 'paper:x:1of2:2026-11-17', 'a paper goes before events');
+  assert.deepEqual(r1.results, { mastodon: 'unverified', linkedin: 'unverified' }, 'POST-READBACK-1: sent but not read back');
+  assert.deepEqual(sent[0], ['mastodon', 'Medium text.']);
+  assert.deepEqual(sent[1], ['linkedin', 'Long \\(text\\) for LinkedIn.', 'urn:li:person:abc', 'https://ultrastable.io/research/x']);
+  assert.deepEqual(versions, ['202610', '202609'], 'a month LinkedIn does not serve falls back to the previous one');
+  const r2 = await runSocial({ db: env.DB, env, fetch: f, now: NOW + 3600e3, tenant: 't' });
+  assert.equal(r2.id, 'ev:1'); assert.deepEqual(Object.keys(r2.results), ['mastodon'], 'an event is never sent to LinkedIn');
+  // a paper not yet on LinkedIn is retried at most once a day
+  const env2 = mk(); liFail = true; versions = [];
+  await store.put(env2.DB, env2, 't', 'oauth:linkedin', { secret: {}, meta: { sub: 'abc' }, access: 'li', expiresAt: NOW + 864e5 * 30, status: 'ok' });
+  const a = await runSocial({ db: env2.DB, env: env2, fetch: f, now: NOW, tenant: 't' });
+  assert.match(a.results.linkedin, /failed: linkedin HTTP 500/);
+  assert.equal((await runSocial({ db: env2.DB, env: env2, fetch: f, now: NOW + 3600e3, tenant: 't' })).skipped, 'nothing due');
+  liFail = false;
+  const c = await runSocial({ db: env2.DB, env: env2, fetch: f, now: NOW + 25 * 3600e3, tenant: 't' }); assert.equal(c.results && c.results.linkedin, 'unverified', JSON.stringify(c));
+  // an expired LinkedIn token is not a channel
+  const env3 = mk(); await store.put(env3.DB, env3, 't', 'oauth:linkedin', { secret: {}, meta: {}, access: 'li', expiresAt: NOW - 1, status: 'ok' });
+  assert.deepEqual(await runSocial({ db: env3.DB, env: env3, fetch: f, now: NOW, tenant: 't' }), { skipped: 'no channel connected' });
+});
+
+test('SOCIAL-BUFFER-1: every connected Buffer channel gets the post; X is cut to 280, LinkedIn queued', async () => {
+  const { postBuffer } = await import('../src/social.js'); const sent = [];
+  const f = async (u, init) => { const q = JSON.parse(init.body).query;
+    if (q.includes('organizations')) return J({ data: { account: { organizations: [{ id: 'o1' }] } } });
+    if (q.includes('channels(')) return J({ data: { channels: [{ id: 'l', service: 'linkedin' }, { id: 'x', service: 'twitter' }, { id: 'd', service: 'facebook', isDisconnected: true }] } });
+    sent.push(q); return J({ data: { createPost: { post: { id: 'p' + sent.length, status: 'x' } } } }); };
+  const r = await postBuffer('tok', 'L'.repeat(900), f, 'S'.repeat(400));
+  assert.deepEqual(Object.keys(r), ['linkedin', 'twitter']); assert.match(sent[0], /addToQueue/); assert.match(sent[1], /shareNow/); assert.ok(!sent[1].includes('S'.repeat(281)));
+});
+
+// POST-READBACK-1 (2026-11-21): the relay said scheduled/sent/no-channel and the old code stored "posted" for all of it; the owner saw X only.
+test('relay results are recorded as read back, queued, unverified or failed, never as posted', async () => {
+  const { classifyRelay } = await import('../src/social.js');
+  const f = async u => String(u).endsWith('/api/v1/statuses/9') ? J({ id: '9' }) : NF;
+  const r = await classifyRelay({ mastodon: { status: 'ok', url: 'https://mstdn.science/@Q/9' }, linkedin: { status: 'scheduled', id: 'a' }, substack: { status: 'scheduled', id: 'b' }, twitter: { status: 'sent', id: 'c' }, facebook: { status: 'no-channel' }, instagram: { status: 'error', error: 'x' } }, f);
+  assert.deepEqual(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v.status])), { mastodon: 'verified', linkedin: 'queued', substack: 'queued', twitter: 'unverified', facebook: 'failed', instagram: 'failed' });
+  const g = async () => NF; assert.equal((await classifyRelay({ mastodon: { status: 'ok', url: 'https://mstdn.science/@Q/9' } }, g)).mastodon.status, 'unverified');
+});
+
+test('per-service relay rows override a legacy relay row, so a failed service is retried', async () => {
+  const env = mk(); const gate = { kill: false, mode: 'live', max_posts_per_day: 3, max_posts_per_week: 14, paused_channels: [] };
+  const cal = { posts: [{ id: 'p1', date: '2026-11-17', text: 'Hello there.', kind: 'event', arm: 'x' }] }; const sent = [];
+  const f = async (u, init = {}) => { u = String(u); if (u.endsWith('/gate.json')) return J(gate); if (u.endsWith('/calendar.json')) return J(cal);
+    if (u === 'https://relay.test/relay/post') { sent.push(JSON.parse(init.body).channels); return J({ results: { linkedin: { status: 'sent', id: 'z' } } }); } return NF; };
+  env.SOCIAL_RELAY_URL = 'https://relay.test'; env.SOCIAL_RELAY_TOKEN = 't';
+  await store.ensureSchema(env.DB); await runSocial({ db: env.DB, env, fetch: async () => NF, now: NOW, tenant: 't' }).catch(() => 0);
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_posted (id TEXT NOT NULL, channel TEXT NOT NULL, at TEXT NOT NULL, ref TEXT, arm TEXT, status TEXT, attempts INTEGER DEFAULT 1, PRIMARY KEY (id, channel))").run();
+  await env.DB.prepare("INSERT OR REPLACE INTO social_posted (id, channel, at, ref) VALUES ('p1','relay','2026-11-17T00:00:00Z','{}')").run();
+  await env.DB.prepare("INSERT OR REPLACE INTO social_posted (id, channel, at, ref, status, attempts) VALUES ('p1','relay:linkedin','2026-11-17T00:00:00Z','queued','failed',1)").run();
+  const r = await runSocial({ db: env.DB, env, fetch: f, now: NOW + 864e5 * 5, tenant: 't' });
+  assert.deepEqual(sent, [['linkedin']], JSON.stringify(r));
+});
+
+test('verifyRelay reads Buffer back: sent with a link is verified, still-queued stays queued, an error is failed', async () => {
+  const env = mk(); env.SOCIAL_RELAY_URL = 'https://relay.test'; env.SOCIAL_RELAY_TOKEN = 't';
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_posted (id TEXT NOT NULL, channel TEXT NOT NULL, at TEXT NOT NULL, ref TEXT, arm TEXT, status TEXT, attempts INTEGER DEFAULT 1, PRIMARY KEY (id, channel))").run();
+  const ins = (c, ref, st) => env.DB.prepare("INSERT INTO social_posted (id, channel, at, ref, status, attempts) VALUES ('p1',?,'2026-11-17T00:00:00Z',?,?,1)").bind(c, ref, st).run();
+  const A = 'a'.repeat(24), B = 'b'.repeat(24), C = 'c'.repeat(24);
+  await ins('relay:linkedin', A, 'unverified'); await ins('relay:substack', B, 'unverified'); await ins('relay:twitter', C, 'unverified');
+  const f = async (u, init) => { assert.equal(String(u), 'https://relay.test/relay/status'); assert.deepEqual(JSON.parse(init.body).ids, [A, B, C]);
+    return J({ posts: { [A]: { status: 'sent', externalLink: 'https://linkedin.com/x' }, [B]: { status: 'scheduled' }, [C]: { status: 'error' } } }); };
+  await verifyRelay(env.DB, env, f, NOW);
+  const rows = (await env.DB.prepare("SELECT channel, status, ref FROM social_posted ORDER BY channel").all()).results;
+  assert.deepEqual(rows.map(r => r.status), ['verified', 'unverified', 'failed']);
+  assert.match(rows[0].ref, /linkedin\.com\/x/);
 });

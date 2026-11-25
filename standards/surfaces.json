@@ -299,6 +299,19 @@
       "reason": "machine-to-machine callback authenticated by HMAC; nothing for an agent to discover"
     },
     {
+      "id": "cloudflare-alert-webhook",
+      "path": "/hook/cloudflare",
+      "methods": [
+        "POST"
+      ],
+      "kind": "rest",
+      "audience": "machine",
+      "standards": [],
+      "discoverable": false,
+      "description": "CF-ALERTS-1: Cloudflare posts an account alert with the destination secret in cf-webhook-auth; it becomes a CF-ALERT queue item; 401 on a bad secret.",
+      "reason": "machine-to-machine callback authenticated by a shared secret; nothing for an agent to discover"
+    },
+    {
       "id": "agents-probe",
       "path": "/agents/probe",
       "methods": [
@@ -377,6 +390,32 @@
       "discoverable": false,
       "description": "MAIN-WRITER-1: commits a workflow's data files to main with the org's GitHub App, after verifying the run's GitHub Actions OIDC token (audience ultrastable-main); protected paths are refused.",
       "reason": "called only by tools/push_main.py inside this repository's workflows with a per-run token; nothing for an agent to discover"
+    },
+    {
+      "id": "uptime-repair",
+      "path": "/api/uptime/repair",
+      "methods": [
+        "POST"
+      ],
+      "kind": "rest",
+      "audience": "machine",
+      "standards": [],
+      "discoverable": false,
+      "description": "UPTIME-1: redeploys the site (the fixed workflow deploy-site.yml on main) with the org's GitHub App when the uptime worker finds a dead hostname; takes no input and is throttled",
+      "reason": "called only by the ultrastable-uptime worker over a service binding; nothing for an agent to discover"
+    },
+    {
+      "id": "lane-merge",
+      "path": "/api/lane/merge",
+      "methods": [
+        "POST"
+      ],
+      "kind": "rest",
+      "audience": "machine",
+      "standards": [],
+      "discoverable": false,
+      "description": "LANE-WORKER-MERGE-1: squash-merges a same-repository pull request that changes workflows with the org's GitHub App, after verifying the run's OIDC token, the exact head commit and the green guard",
+      "reason": "called only by tools/lane_worker_merge.py inside this repository's lane with a per-run token; nothing for an agent to discover"
     },
     {
       "id": "ops-backup",
@@ -476,6 +515,32 @@
       "reason": "internal feed read by the site worker over a service binding, not a capability for callers"
     },
     {
+      "id": "stickiness",
+      "path": "/api/stickiness",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "The judged freshness, breadth, depth and diversity of every system's content, its plan and its daily series (STICKY-1).",
+      "reason": "internal feed read by the site worker over a service binding; the site serves it publicly at /api/stickiness"
+    },
+    {
+      "id": "stickiness-queue",
+      "path": "/api/stickiness/queue/{system}.json",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "The social queue of one system's entries not yet promoted, drained by the core social module through gate.tenant_queues (STICKY-1).",
+      "reason": "internal feed read by the site worker over a service binding and drained by the social module, not a capability for callers"
+    },
+    {
       "id": "decisions",
       "path": "/api/decisions",
       "methods": [
@@ -500,6 +565,19 @@
       "discoverable": false,
       "description": "Pay-or-stay-free analysis from real free-tier usage and current Cloudflare prices; free-only is the default mode (ROI-1).",
       "reason": "internal feed read by the owner dashboard and the site worker proxy; it recommends only and enables nothing"
+    },
+    {
+      "id": "spend",
+      "path": "/api/spend",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "Today's estimated Cloudflare bill, the soft daily spend target, the throttle level (full, ease, throttle, crawl) and its knobs; ?tenant= gives one tenant's share (SPEND-SOFT-1).",
+      "reason": "read by tenant workers and the site worker proxy; it reports state and enables nothing"
     },
     {
       "id": "goals",
@@ -565,6 +643,97 @@
       "discoverable": false,
       "reason": "Read by foundation code and the owner page; to be exposed as an MCP tool in a later contract version.",
       "description": "OWNER-ACTS-1: sign-ins a provider refused and open gate cards, read live from the credential rows; JSON, no secret values."
+    },
+    {
+      "id": "social-import",
+      "path": "/internal/social/import",
+      "methods": [
+        "POST"
+      ],
+      "kind": "rest",
+      "audience": "owner",
+      "standards": [],
+      "discoverable": false,
+      "description": "SOCIAL-MODULE-1: token-gated hand-over of a channel token into the sealed credential store; answers names only, never values.",
+      "reason": "Machine-to-machine bearer route for moving a channel login into the system; not a capability for callers."
+    },
+    {
+      "id": "graph",
+      "path": "/api/graph",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "The knowledge graph of this system's own data: last pass summary (counts by kind, hubs, communities, bridges, orphans) and its series; the public view veils records of kinds not declared public (DATAGRAPH-1).",
+      "reason": "served by the tick Worker; the site serves /api/graph and /api/graph/insights publicly over a service binding"
+    },
+    {
+      "id": "graph-ai",
+      "path": "/api/graph/ai",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "KGRAPH-AI-1: the knowledge graph's AI layer: today's neuron cost against its share, embedded node count and community summaries.",
+      "reason": "served by the tick Worker; a cost probe for the graph's Workers AI use"
+    },
+    {
+      "id": "graph-insights",
+      "path": "/api/graph/insights",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "Open findings of the knowledge graph (orphaned kinds, bridges, new hubs, fragmentation) and link leads awaiting confirmation by later data (DATAGRAPH-1).",
+      "reason": "served by the tick Worker; the site serves /api/graph and /api/graph/insights publicly over a service binding"
+    },
+    {
+      "id": "graph-node",
+      "path": "/api/graph/node",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "One record of the knowledge graph and its neighbourhood (depth 1 or 2), the local context for retrieval; public kinds only without the owner bearer (DATAGRAPH-1).",
+      "reason": "served by the tick Worker; the site serves /api/graph and /api/graph/insights publicly over a service binding"
+    },
+    {
+      "id": "graph-search",
+      "path": "/api/graph/search",
+      "methods": [
+        "GET"
+      ],
+      "kind": "rest",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "Label search over the knowledge graph; public kinds only without the owner bearer (DATAGRAPH-1).",
+      "reason": "served by the tick Worker; the site serves /api/graph and /api/graph/insights publicly over a service binding"
+    },
+    {
+      "id": "graph-page",
+      "path": "/graph",
+      "methods": [
+        "GET"
+      ],
+      "kind": "ui",
+      "audience": "public",
+      "standards": [],
+      "discoverable": false,
+      "description": "The knowledge graph of this system's data in plain words: size, what the system noticed, most connected records, how connected each kind is (DATAGRAPH-1).",
+      "reason": "served by the tick Worker; the site serves /api/graph and /api/graph/insights publicly over a service binding"
     }
   ]
 }
