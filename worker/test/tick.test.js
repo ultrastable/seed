@@ -184,3 +184,17 @@ test('connector health: last_ok and expires_at each tick; two failed refreshes r
   await STEPS.probe_gates(db, ctx());
   assert.equal((await cards())[0].status, 'closed');
 });
+
+test('SPEND-SOFT-1: no step is skipped for good; lean defers to every 3 h, spend crawl keeps the queue moving', async () => {
+  const { stepPlan } = await import('../src/tick.js');
+  const off = Date.parse('2026-11-10T01:15:00Z'), on = Date.parse('2026-11-10T03:05:00Z');
+  assert.equal(stepPlan('pulse', { lean: true, now: off }), 'defer');
+  assert.equal(stepPlan('pulse', { lean: true, now: on }), 'run');
+  const crawl = { level: 'crawl', knobs: { wide_every_h: 6, extra_every_h: 3 } };
+  for (const s of ['dispatch', 'execute', 'reap_claims', 'measure']) assert.equal(stepPlan(s, { spend: crawl, now: off }), 'run', s);
+  assert.equal(stepPlan('unknowns', { spend: crawl, now: off }), 'defer');
+  assert.equal(stepPlan('unknowns', { spend: crawl, now: on }), 'run');
+  assert.equal(stepPlan('pulse', { spend: { level: 'throttle', knobs: { wide_every_h: 1 } }, now: off }), 'defer');
+  assert.equal(stepPlan('pulse', { spend: { level: 'throttle', knobs: { wide_every_h: 1 } }, now: on }), 'run');
+  assert.equal(stepPlan('pulse', { spend: { level: 'ease', knobs: {} }, now: off }), 'run');
+});
