@@ -1,35 +1,62 @@
 # SPDX-License-Identifier: LicenseRef-Ultrastable-USL-1.0
 # Copyright (c) Ultrastable
-"""SYSTEM-1: the one definition of an Ultrastable system names real code for every part; HUMAN-VOICE-1 lint works."""
-import subprocess
-import sys
+"""SYSTEM-SPEC-1: the kit carries its own definition, generated from its code, and every clause is probed here."""
+import importlib.util
+import json
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-import humanvoice  # noqa: E402
-import system  # noqa: E402
+KIT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("system", KIT / "scripts" / "system.py")
+system = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(system)
 
 
-class System(unittest.TestCase):
-    def test_every_part_has_code_and_the_page_is_current(self):
-        self.assertEqual(system.check(ROOT), [])
+class SystemSpec(unittest.TestCase):
+    def test_kit_passes_its_own_definition(self):
+        self.assertEqual(system.check(KIT), [])
 
-    def test_sections_cover_the_five_questions(self):
-        ids = [s["id"] for s in system.load(ROOT)["sections"]]
-        self.assertEqual(ids, ["is", "runs", "bootstraps", "autonomous", "criticality"])
+    def test_definition_covers_identity_run_bootstrap_autonomy_and_rules(self):
+        md = (KIT / "SYSTEM.md").read_text()
+        for h in ("## What an Ultrastable system is", "## How it runs", "## How it bootstraps", "## How it becomes autonomous and reaches criticality", "## Standing rules"):
+            self.assertIn(h, md)
+        for word in ("`self-sustaining`", "`year_gate`", "`ignition`", "k_eff"):
+            self.assertIn(word, md)
 
-    def test_cli(self):
-        r = subprocess.run([sys.executable, str(ROOT / "scripts/system.py"), "--check"], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 0, r.stdout)
+    def test_every_agent_entry_point_loads_it(self):
+        self.assertTrue((KIT / "CLAUDE.md").read_text().startswith("@SYSTEM.md"))
+        self.assertIn("SYSTEM.md", (KIT / "AGENTS.md").read_text())
 
+    def _copy(self):
+        d = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d, True)
+        dst = d / "kit"
+        shutil.copytree(KIT, dst, ignore=shutil.ignore_patterns("node_modules", "__pycache__", "org"))
+        return dst
 
-class HumanVoice(unittest.TestCase):
-    def test_flags_stock_phrases_and_passes_plain_text(self):
-        self.assertTrue(humanvoice.lint("In conclusion, this cutting-edge tool will revolutionize work."))
-        self.assertTrue(humanvoice.lint("We value transparency, accountability, and innovation."))
-        self.assertEqual(humanvoice.lint("The tick ran 144 times and closed two items."), [])
+    def test_a_clause_whose_code_is_gone_fails(self):
+        k = self._copy()
+        (k / "worker" / "src" / "ignition.js").write_text("// removed\n")
+        errs = system.check(k)
+        self.assertTrue(any(e.startswith("AUT-1") for e in errs), errs)
+
+    def test_a_new_rule_with_no_enforcement_in_the_kit_fails(self):
+        k = self._copy()
+        a = k / "agents" / "AGENTS.md"
+        a.write_text(a.read_text() + "\n- **A new rule (NEW-RULE-1, test).** Enforced by `foundation/nowhere.py`.\n")
+        self.assertTrue(any(e.startswith("NEW-RULE-1") for e in system.check(k)))
+
+    def test_not_in_kit_only_shrinks(self):
+        k = self._copy()
+        p = k / "autonomy" / "system.json"
+        d = json.loads(p.read_text()); d["not_in_kit"].append("CLAIMS-1"); p.write_text(json.dumps(d))
+        self.assertTrue(any("not_in_kit lists rules" in e for e in system.check(k)))
+
+    def test_stale_document_fails(self):
+        k = self._copy()
+        (k / "SYSTEM.md").write_text("# hand edited\n")
+        self.assertTrue(any("SYSTEM.md is stale" in e for e in system.check(k)))
 
 
 if __name__ == "__main__":

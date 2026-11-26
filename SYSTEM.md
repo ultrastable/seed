@@ -186,7 +186,7 @@ a rule enforced only by the platform is marked so, and the platform checks it fo
 - **COLLISION-1**: Today's failures are guarded in code, not remembered. In this kit: `scripts/branch_cleanup.py`, `worker/src/ghfetch.js`, `worker/src/lane.js`, `worker/test/apprepos.test.js`.
 - **BLINDSPOT-RED-1**: Blind spots are measured, not assumed safe. In this kit: `worker/src/apprepos.js`, `worker/src/costsample.js`.
 - **INTENT-YIELD-1**: The owner's words are the input; what stays true is the output. In this kit: checked by the platform.
-- **FLOW-BALANCE-1**: Issue inflow never exceeds closures; every issue inside its SLA. In this kit: `scripts/balance.py`, `worker/src/flowbalance.js`.
+- **FLOW-BALANCE-1**: Issue inflow never exceeds closures; every issue inside its SLA. In this kit: `doctrine/balance.json`, `scripts/balance.py`, `worker/src/flowbalance.js`.
 - **PATHFINDER-1**: Find another path before asking; the information is already held. In this kit: checked by the platform.
 - **COLDSTART-1**: Everything bootstraps itself from a cold start and works together from birth. In this kit: `doctrine/SYSTEM.md`, `worker/src/visibility.js`, `worker/src/visibility.test.js`.
 - **WORK-NOT-PULSE-1**: Root-caused on launch day. In this kit: `worker/src/greenguard.js`, `worker/test/greenguard.test.js`.
