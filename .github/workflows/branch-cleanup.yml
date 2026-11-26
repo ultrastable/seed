@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   cleanup:
-    if: ${{ vars.HALT != '1' }}  # HALT-1. This repository's own copy runs here (the kit copy in ultrastable/ultrastable seed/ skips the template); kit-sync never edits workflow files
+    if: ${{ vars.HALT != '1' && !github.event.repository.is_template && github.repository != 'ultrastable/seed' }}  # HALT-1; TEMPLATE-CODE-ONLY-1: the template's own branches are cleaned by the platform's sweep
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
