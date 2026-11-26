@@ -116,7 +116,7 @@ Criticality numbers (from `autonomy/criticality.json`): window 14 days, k_min 1,
 
 ## Standing rules
 
-92 standing rules from `agents/AGENTS.md`, each with the enforcement it cites. "In this kit" names code this repository runs;
+94 standing rules from `agents/AGENTS.md`, each with the enforcement it cites. "In this kit" names code this repository runs;
 a rule enforced only by the platform is marked so, and the platform checks it for every system it hosts.
 
 - **USER-BACKEND-1**: The user does the idea; the system does the backend; one fix improves every system. In this kit: `doctrine/user-backend.json`, `worker/src/errors.js`, `worker/test/errors.test.js`.
@@ -186,12 +186,14 @@ a rule enforced only by the platform is marked so, and the platform checks it fo
 - **COLLISION-1**: Today's failures are guarded in code, not remembered. In this kit: `scripts/branch_cleanup.py`, `worker/src/ghfetch.js`, `worker/src/lane.js`, `worker/test/apprepos.test.js`.
 - **BLINDSPOT-RED-1**: Blind spots are measured, not assumed safe. In this kit: `worker/src/apprepos.js`, `worker/src/costsample.js`.
 - **INTENT-YIELD-1**: The owner's words are the input; what stays true is the output. In this kit: checked by the platform.
-- **FLOW-BALANCE-1**: Issue inflow never exceeds closures; every issue inside its SLA. In this kit: `doctrine/balance.json`, `scripts/balance.py`, `worker/src/flowbalance.js`.
+- **FLOW-BALANCE-1**: Issue inflow never exceeds closures; every issue inside its SLA. In this kit: `scripts/balance.py`, `worker/src/flowbalance.js`.
 - **PATHFINDER-1**: Find another path before asking; the information is already held. In this kit: checked by the platform.
 - **COLDSTART-1**: Everything bootstraps itself from a cold start and works together from birth. In this kit: `doctrine/SYSTEM.md`, `worker/src/visibility.js`, `worker/src/visibility.test.js`.
 - **WORK-NOT-PULSE-1**: Root-caused on launch day. In this kit: `worker/src/greenguard.js`, `worker/test/greenguard.test.js`.
+- **OPEN-STANDARDS-1**: Open standards, never a home-grown format. In this kit: `autonomy/`, `doctrine/`, `doctrine/open-standards-baseline.json`, `doctrine/open-standards.json`.
 - **BOOT-ACCEPT-1**: Every surface works together from the first deploy; one command proves it. In this kit: `worker/src/visibility.js`, `worker/test/bootaccept.test.js`.
 - **SYSTEM-SPEC-1**: Every system carries its own definition, generated from its code. In this kit: `autonomy/system.json`, `scripts/system.py`, `tests/test_system.py`.
+- **CLEANROOM-1**: A fresh seed proves the whole; no surface contradicts the axiom. In this kit: ``, `scripts/humanvoice.py`, `tests/test_system.py`.
 - **DOC-CONSUMED-1**: Every document is consumed by code. In this kit: checked by the platform.
 - **CLOSED-LOOP-1**: Closed loops only; nobody reads, reviews or decides. In this kit: `autonomy/policy.json`.
 - **NO-FABRICATION-1**: No made-up numbers. In this kit: `doctrine/claims.json`, `scripts/claims.py`.
