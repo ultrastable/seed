@@ -1,7 +1,7 @@
 {
  "rule": "FLEET-MAP-1",
  "source": "ultrastable/ultrastable seed/",
- "source_sha": "1dd86eaa",
+ "source_sha": "12a933eb",
  "digests": {
   ".claude/settings.json": "3befd0643b446cccf9d7eb1c4972da3ef184146d",
   ".devcontainer/devcontainer.json": "09e005d0f8f47658c3cee7b72b958c316d76312c",
@@ -289,7 +289,7 @@
   "worker/src/agentic/core/tools.js": "939406bda245804cfb8e9736b8664a2868804fc2",
   "worker/src/agentic/handler.js": "be12c456707533b8c88f447be65d5ba5adba3d02",
   "worker/src/airoute.js": "163df2a89e15d0ceca939b8827ee5c54324dcbaf",
-  "worker/src/airouter.js": "fb5ed71e80790a770cf2c7d6984d1c1c3e515c52",
+  "worker/src/airouter.js": "6f1b6e323b633905951c83ab7e1fc1d3d3e36ca3",
   "worker/src/appaudit.js": "d40af3e790929c6c7c07812847786552e6a17316",
   "worker/src/apprepos.js": "7cc61d27d3571d994b3fb2af85b1aeb126d6c6ab",
   "worker/src/auditauth.js": "1d774b605fdab907e475108a390652752bfcc917",
@@ -443,7 +443,7 @@
   "worker/test/lane.test.js": "b62d2f730fb24299914e2762e504e72e1cc056f0",
   "worker/test/lanemerge.test.js": "c09348a1dc961fb6f60ddbfdc5d75fc97380900f",
   "worker/test/livechanges.test.js": "92664dd32fc9c0b47e4c179ecbdf5a51baa30d7d",
-  "worker/test/loopship.test.js": "d0bbe3752a34c422bce8d088f82af9824eef7f35",
+  "worker/test/loopship.test.js": "fe47527ec48109638b861391a08bba37042dfc58",
   "worker/test/maincommit.test.js": "28a562c3fcfb5cf060b918ecfcd24581b0e78dd6",
   "worker/test/managers.test.js": "b9fb1cedb02b935566521ee6e37e0cb613f674ad",
   "worker/test/measure.test.js": "d987c1858040a9e1b685aee5d178faa318375621",
