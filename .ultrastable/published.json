@@ -1,7 +1,7 @@
 {
  "rule": "FLEET-MAP-1",
  "source": "ultrastable/ultrastable seed/",
- "source_sha": "0e6161de",
+ "source_sha": "07c6c545",
  "digests": {
   ".claude/settings.json": "3befd0643b446cccf9d7eb1c4972da3ef184146d",
   ".devcontainer/devcontainer.json": "09e005d0f8f47658c3cee7b72b958c316d76312c",
@@ -10,12 +10,12 @@
   ".github/ISSUE_TEMPLATE/start.yml": "b1ea3471ef5ab07cd1a11009ba3d0485dbcbff78",
   ".github/copilot-instructions.md": "9915b598835041a3f795e42783583751e89b8924",
   ".github/dependabot.yml": "db89bebcba0c81b1fb777c191ea2b59ae57a178a",
-  ".github/workflows/bootstrap.yml": "715ba72c342b2256fb70bf38f4bcf66be6ed7125",
+  ".github/workflows/bootstrap.yml": "a7f0d99bff055b5ae6b191bdcf5ea9e414e1e4ab",
   ".github/workflows/branch-cleanup.yml": "b108523808b9b1a17c77a96e0af78c00d4b13931",
   ".github/workflows/funding-maintenance.yml": "5dfcbbda8078173a8696ef77d2df7bb7b7cdca88",
   ".github/workflows/improve.yml": "72fb7f18fdde6b07baaedb22059edb44a9a2797d",
   ".github/workflows/memory-fresh.yml": "26cfebbfbab574ee175148b81130d9c35e62380f",
-  ".github/workflows/org-init.yml": "41a7b204b11a0da1d5389f2c8e92a911fac5fadd",
+  ".github/workflows/org-init.yml": "c2916afc858fbf7918a7217b53b95cfa1e36e4b2",
   ".github/workflows/org-profile-probe.yml": "765433e19fe649b22060a141651203a3d2882668",
   ".github/workflows/outreach.yml": "0ede3133465e6ae66672efc0bf2d0a6c383b4f51",
   ".github/workflows/platform-sync.yml": "63e4ab425499348b2363e6468ec9c63817253e7c",
