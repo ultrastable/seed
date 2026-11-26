@@ -1,7 +1,7 @@
 {
  "rule": "FLEET-MAP-1",
  "source": "ultrastable/ultrastable seed/",
- "source_sha": "aeae156e",
+ "source_sha": "feda9c69",
  "digests": {
   ".claude/settings.json": "3befd0643b446cccf9d7eb1c4972da3ef184146d",
   ".devcontainer/devcontainer.json": "09e005d0f8f47658c3cee7b72b958c316d76312c",
@@ -271,7 +271,8 @@
   "worker/migrations/0031_datagraph.sql": "0ea71f5de62db52c31ccb4adb35d0f3eca4262b3",
   "worker/migrations/0032_read_indexes_5.sql": "b1a7e5d2448343b53beb2a74934bdfb405d4a988",
   "worker/migrations/0033_orchestrate.sql": "15ed582d778b372c96def140b2557ef8f7eb71f7",
-  "worker/migrations/index.json": "7b2fe8784193714d8d1c0936ff69ef619a1813fc",
+  "worker/migrations/0034_read_indexes_6.sql": "889b9482fd6a8169302632303b633f3ee7dc0a00",
+  "worker/migrations/index.json": "393e177115be2056d82057ce1e458214fac75723",
   "worker/package.json": "1991093f0ddae2e2f89c801790f57db567b0a1f3",
   "worker/src/agentic/acl/a2a.js": "18025bcac197d3127c49c043a97503f3c7d79295",
   "worker/src/agentic/acl/discovery.js": "02e92abcf421ac203ddcde1f607acf2ecb3eebc4",
