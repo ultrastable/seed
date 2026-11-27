@@ -1,7 +1,7 @@
 {
  "rule": "FLEET-MAP-1",
  "source": "ultrastable/ultrastable seed/",
- "source_sha": "05524c8c",
+ "source_sha": "b17a4477",
  "digests": {
   ".claude/settings.json": "3befd0643b446cccf9d7eb1c4972da3ef184146d",
   ".devcontainer/devcontainer.json": "09e005d0f8f47658c3cee7b72b958c316d76312c",
@@ -342,7 +342,7 @@
   "worker/src/budget.js": "38c79a0dc726a7b6e058bb114315c73089971255",
   "worker/src/cfalerts.js": "9e6b564b058fc2c48183c544fa733744abb08502",
   "worker/src/cloudevents.js": "d1e7cb0a3d620a40678e84025933ea987d1369cc",
-  "worker/src/codeagent.js": "0253f00056b9e08d68d92ea949a85be821423585",
+  "worker/src/codeagent.js": "52875e28e5b808076cdf1325dadc5296a418ee85",
   "worker/src/contract.js": "0ecd80bbe78fbd6e3aa573bb3ab7b764e5c7ec5d",
   "worker/src/control.js": "5c03d0755fd82dda48d6eef5ea45edc5d4fd8d5b",
   "worker/src/costsample.js": "938bc653b0a390555ed2e7d6b289081dd9f8bf8c",
@@ -553,7 +553,7 @@
   "worker/test/spec-32-platform-agent.test.js": "32c513139e4be3c3e32895fc0ea316b97a05d1b3",
   "worker/test/spec-32-platform-discovery.test.js": "5b698ea4ff4e3ca9cbeca7ab51f4d6c878e49924",
   "worker/test/spec-33-deploy-path.test.js": "7cb488e11712842313895f54d4a757a2d2d2e271",
-  "worker/test/spec-33-executors.test.js": "04375250df1175eb5bbed817a685addef2e0730d",
+  "worker/test/spec-33-executors.test.js": "f9123e6a63dfbdc86e78616021e6310dd6e7155c",
   "worker/test/spec-33-handoff.test.js": "c7906b3e64242cc221a29361f5dbc6357d1d95eb",
   "worker/test/spec-33-lane-rulings.test.js": "040d22aa22db2b44138cfeaa63d0b5d777198ccd",
   "worker/test/spec-33-merge-lane.test.js": "265071c98f687b9cb4d6eed971f6eb26f1c5ea16",
