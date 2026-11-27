@@ -1,7 +1,7 @@
 {
  "rule": "FLEET-MAP-1",
  "source": "ultrastable/ultrastable seed/",
- "source_sha": "87476002",
+ "source_sha": "2dd32aa5",
  "digests": {
   ".claude/settings.json": "3befd0643b446cccf9d7eb1c4972da3ef184146d",
   ".devcontainer/devcontainer.json": "09e005d0f8f47658c3cee7b72b958c316d76312c",
@@ -428,7 +428,7 @@
   "worker/src/vendor/core/datagraph.js": "55ac126901a5569c8facc9e943c3773f0b49a7fb",
   "worker/src/vendor/core/progress.js": "c0f2a176bed4274fb3db38c003b2dcd256c38138",
   "worker/src/vendor/core/stickiness.js": "d7d9a3ff1c2f015b59e670a61248c8908e4a64bd",
-  "worker/src/vendor/core/substance.js": "80dd6a869f65577f474d157de131c0cebf766e9c",
+  "worker/src/vendor/core/substance.js": "7050ed5328c5a6cc0e39cafe37416554390c4276",
   "worker/src/visibility.js": "dc21de4c29be67d719a6dac6a731c2facb5345ff",
   "worker/src/visibility.test.js": "6ee64bae2b53adfa5b63c8da149fe6f6f0b925b1",
   "worker/src/watchdog.js": "3d4c01e26c54d378cde94ff4b7de0f98d3573920",
