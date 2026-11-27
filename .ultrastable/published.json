@@ -1,7 +1,7 @@
 {
  "rule": "FLEET-MAP-1",
  "source": "ultrastable/ultrastable seed/",
- "source_sha": "bb889c3d",
+ "source_sha": "bfed15dd",
  "digests": {
   ".claude/settings.json": "3befd0643b446cccf9d7eb1c4972da3ef184146d",
   ".devcontainer/devcontainer.json": "09e005d0f8f47658c3cee7b72b958c316d76312c",
@@ -216,7 +216,7 @@
   "scripts/phasework.py": "6481ccfe78757338b28a9a09a24bed99fc91cb59",
   "scripts/prsize.py": "bd0e0ba98e50b4827bf426218e6283af297fe83d",
   "scripts/redteam.py": "2a7e12bae0947e405968840a41ef50780f431a10",
-  "scripts/repoconform.py": "fb67a5f8ba3e425673f2d852ab0f70cdadb4ad0c",
+  "scripts/repoconform.py": "bd112690ec3a2531f61fd2d1c83bfcddd26d14f5",
   "scripts/resolve_generated.py": "29275f246d064a9e278ebf3005b1715feb8cccbc",
   "scripts/seedadmit.py": "e747186463017b3323ad9850d4a0272c44af84ea",
   "scripts/seedlife.py": "8610d7a524b23ff82082c54d82c3f5eb6fa2afd5",
