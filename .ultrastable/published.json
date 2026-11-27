@@ -1,7 +1,7 @@
 {
  "rule": "FLEET-MAP-1",
  "source": "ultrastable/ultrastable seed/",
- "source_sha": "0230990d",
+ "source_sha": "18b9ad0f",
  "digests": {
   ".claude/settings.json": "3befd0643b446cccf9d7eb1c4972da3ef184146d",
   ".devcontainer/devcontainer.json": "09e005d0f8f47658c3cee7b72b958c316d76312c",
@@ -395,8 +395,8 @@
   "worker/src/uptimerepair.js": "e3432ecf02cbf6e421079ec06b56351be910c178",
   "worker/src/vendor/core/audit.js": "57816635d174c358eec72bc8da6cab016240f614",
   "worker/src/vendor/core/datagraph.js": "55ac126901a5569c8facc9e943c3773f0b49a7fb",
-  "worker/src/vendor/core/progress.js": "cf5ead7e74cad190220737032a430c14218263b5",
-  "worker/src/vendor/core/stickiness.js": "4c7ff18be8ce03a40a822dfa764bfbe399138fac",
+  "worker/src/vendor/core/progress.js": "c0f2a176bed4274fb3db38c003b2dcd256c38138",
+  "worker/src/vendor/core/stickiness.js": "d7d9a3ff1c2f015b59e670a61248c8908e4a64bd",
   "worker/src/vendor/core/substance.js": "80dd6a869f65577f474d157de131c0cebf766e9c",
   "worker/src/visibility.js": "dc21de4c29be67d719a6dac6a731c2facb5345ff",
   "worker/src/visibility.test.js": "6ee64bae2b53adfa5b63c8da149fe6f6f0b925b1",
